@@ -12,7 +12,7 @@ export async function streamSpeech(text: string, voiceId?: string): Promise<Read
     },
     body: JSON.stringify({
       text,
-      model_id: "eleven_turbo_v2",  // lowest latency model
+      model_id: "eleven_turbo_v2_5",  // lowest latency model
       voice_settings: {
         stability: 0.5,
         similarity_boost: 0.75,
@@ -20,7 +20,10 @@ export async function streamSpeech(text: string, voiceId?: string): Promise<Read
     }),
   });
 
-  if (!res.ok) throw new Error(`ElevenLabs API error: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "(no body)");
+    throw new Error(`ElevenLabs ${res.status}: ${body}`);
+  }
   if (!res.body) throw new Error("No response body from ElevenLabs");
 
   return res.body;
