@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-green: #00C896;
+  --brand-dark: #0F172A;
+}
+
+body {
+  background-color: var(--brand-dark);
+  color: #F8FAFC;
+}
