@@ -37,10 +37,18 @@ export default function RepairSessionPage() {
   return (
     <main className="flex min-h-screen flex-col px-4 py-6 gap-4 max-w-lg mx-auto">
       {session.identification && (
-        <div className="text-center">
-          <p className="text-brand-muted text-sm">Repairing</p>
-          <h2 className="text-xl font-bold text-white">{session.identification.device}</h2>
-          <p className="text-brand-green text-sm">{session.identification.part}</p>
+        <div className="flex flex-col gap-2">
+          <div className="text-center">
+            <p className="text-brand-muted text-sm">Repairing</p>
+            <h2 className="text-xl font-bold text-white">{session.identification.device}</h2>
+            <p className="text-brand-green text-sm">{session.identification.part}</p>
+          </div>
+          {session.identification.problemObservation && (
+            <div className="bg-brand-surface rounded-lg px-4 py-3">
+              <p className="text-xs font-medium text-brand-green mb-1">What we found</p>
+              <p className="text-sm text-white leading-snug">{session.identification.problemObservation}</p>
+            </div>
+          )}
         </div>
       )}
 

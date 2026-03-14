@@ -8,8 +8,9 @@ export interface DeviceIdentification {
   device: string;       // e.g. "Floor Lamp"
   part: string;         // e.g. "Socket Tab"
   confidence: number;   // 0–1
-  s3Key: string;        // uploaded photo key in S3
+  s3Key?: string;       // uploaded photo key in S3 (optional)
   rekognitionLabels?: string[];  // fallback labels from Rekognition
+  problemObservation?: string;  // Featherless vision analysis of what's wrong
 }
 
 export interface RepairStep {
@@ -51,7 +52,7 @@ export interface UpdateSessionRequest {
 }
 
 export interface IdentifyRequest {
-  s3Key: string;
+  imageBase64: string;
 }
 
 export interface IdentifyResponse {
@@ -65,6 +66,7 @@ export interface RepairStepRequest {
   stepNumber: number;
   previousSteps: string[];
   userMessage?: string;
+  problemObservation?: string;
 }
 
 export interface RepairStepResponse {

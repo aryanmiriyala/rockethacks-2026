@@ -1,19 +1,25 @@
 // feat/vision-identify — owns this route
 import { NextRequest, NextResponse } from "next/server";
 import { identifyDeviceFromImage } from "@/lib/services/gemini";
-import { validateLabels } from "@/lib/services/rekognition";
-import type { IdentifyRequest, IdentifyResponse } from "@/lib/types";
+import { observeDeviceProblem } from "@/lib/services/featherless";
+import type { DeviceIdentification, IdentifyRequest, IdentifyResponse } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
-  const { s3Key }: IdentifyRequest = await req.json();
+  const { imageBase64 }: IdentifyRequest = await req.json();
 
-  // Primary: Gemini Vision
-  const identification = await identifyDeviceFromImage(s3Key);
+  // Run Gemini identification and Featherless vision observation in parallel
+  const [geminiResult, observationResult] = await Promise.allSettled([
+    identifyDeviceFromImage(imageBase64),
+    observeDeviceProblem(imageBase64),
+  ]);
 
-  // Fallback: if Gemini confidence is low, cross-check with AWS Rekognition
-  if (identification.confidence < 0.7) {
-    const labels = await validateLabels(s3Key);
-    identification.rekognitionLabels = labels;
+  const identification: DeviceIdentification =
+    geminiResult.status === "fulfilled"
+      ? geminiResult.value
+      : { device: "Unknown Device", part: "Unknown Part", confidence: 0 };
+
+  if (observationResult.status === "fulfilled") {
+    identification.problemObservation = observationResult.value;
   }
 
   return NextResponse.json({ identification } satisfies IdentifyResponse);
