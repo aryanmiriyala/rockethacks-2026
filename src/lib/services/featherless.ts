@@ -3,10 +3,46 @@ import type { RepairStep, RepairStepRequest } from "@/lib/types";
 
 const FEATHERLESS_BASE_URL = "https://api.featherless.ai/v1";
 
+export async function observeDeviceProblem(imageBase64: string): Promise<string> {
+  const res = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.FEATHERLESS_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.FEATHERLESS_VISION_MODEL ?? "Qwen/Qwen2-VL-7B-Instruct",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
+            {
+              type: "text",
+              text: "You are an expert repair technician. Analyze this image and describe specifically what appears to be damaged, broken, or malfunctioning. Focus on visible defects, wear, or faults. Respond in 2-3 sentences.",
+            },
+          ],
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 200,
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Featherless vision API error: ${res.status}`);
+
+  const data = await res.json();
+  return data.choices[0].message.content.trim();
+}
+
 export async function getRepairStep(context: RepairStepRequest): Promise<RepairStep> {
   const systemPrompt = `You are a master repair technician guiding a user through fixing their ${context.device}.
 Be concise, clear, and encouraging. Each instruction should be one actionable step.
-The user will say "Done" when they complete a step. Respond as if speaking directly to them.`;
+The user will say "Done" when they complete a step. Respond as if speaking directly to them.${
+    context.problemObservation
+      ? `\n\nVisual analysis of the device: ${context.problemObservation}`
+      : ""
+  }`;
 
   const previousContext = context.previousSteps.length > 0
     ? `Previous steps completed:\n${context.previousSteps.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\n`
