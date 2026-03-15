@@ -1,6 +1,6 @@
 // feat/vision-identify — owns this file
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { DeviceIdentification } from "@/shared/types";
+import type { DeviceIdentification, InspectionFinding } from "@/shared/types";
 import { extractJsonObject } from "@/server/utils/llm";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -58,6 +58,67 @@ interface InspectionVisionResult {
   confidence: number;
   requestedView: string | null;
   safetyWarnings: string[];
+}
+
+export interface InspectionTurnInput {
+  imageBase64?: string | null;
+  userProblem: string;
+  transcript: string;
+  itemLabel?: string | null;
+  previousFinding?: InspectionFinding | null;
+  previousMessages: Array<{ role: string; content: string }>;
+}
+
+export interface InspectionTurnResult {
+  spokenResponse: string;
+  itemLabel: string;
+  finding: InspectionFinding;
+}
+
+// Single Gemini call that replaces the old inspectLiveFrame + Featherless runInspectionTurn pipeline.
+// Vision + reasoning happen together — cuts latency from ~20s to ~4-6s.
+export async function inspectAndReason(input: InspectionTurnInput): Promise<InspectionTurnResult> {
+  const model = genAI.getGenerativeModel({
+    model: process.env.GEMINI_INSPECT_MODEL ?? "gemini-2.0-flash",
+  });
+
+  const conversationContext = input.previousMessages
+    .slice(-6)
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+    .join("\n");
+
+  const prompt = `You are a voice-first sustainability assistant helping a user decide what to do with a broken household item.
+Your priorities in order: repair it > replace only the broken part > reuse/repurpose > donate > recycle. Buying new is the last resort.
+Be conversational, concise, and encouraging. Answer the user's question directly before asking for more evidence.
+
+User's problem: "${input.userProblem}"
+${input.itemLabel ? `Item identified as: "${input.itemLabel}"` : ""}
+${input.previousFinding ? `Previous assessment: "${input.previousFinding.issueSummary}" (confidence ${input.previousFinding.confidence})` : ""}
+${conversationContext ? `\nRecent conversation:\n${conversationContext}` : ""}
+
+Latest message from user: "${input.transcript}"
+${input.imageBase64 ? "A live camera frame is attached. Analyse what is visible." : "No camera frame this turn."}
+
+Respond ONLY with valid JSON:
+{
+  "spokenResponse": "Short, warm, direct spoken reply (1-3 sentences). Address what the user just said first.",
+  "itemLabel": "Name of the item (e.g. 'Floor Lamp')",
+  "finding": {
+    "issueSummary": "Current best hypothesis based on visible evidence and user description",
+    "confidence": 0.0,
+    "recommendedOutcome": "inspect_more | repair | replace_part | reuse | donate | recycle | unsafe",
+    "rationale": "Why this outcome — include sustainability reasoning if relevant",
+    "requestedView": "Specific next camera view to request, or null",
+    "safetyWarnings": []
+  }
+}`;
+
+  const parts = input.imageBase64
+    ? [prompt, { inlineData: { mimeType: "image/jpeg" as const, data: input.imageBase64 } }]
+    : [prompt];
+
+  const result = await model.generateContent(parts);
+  return extractJsonObject<InspectionTurnResult>(result.response.text());
 }
 
 export async function inspectLiveFrame(input: InspectionVisionInput): Promise<InspectionVisionResult> {
