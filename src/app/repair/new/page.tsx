@@ -228,7 +228,8 @@ export default function NewRepairPage() {
 
   return (
     <main className="min-h-screen bg-brand-dark text-white">
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-4 sm:px-6">
+      <div className="mx-auto grid max-w-7xl gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[1fr_400px] lg:items-start">
+        <div className="flex flex-col gap-4">
         <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl shadow-black/20">
           <video
             ref={videoRef}
@@ -321,8 +322,9 @@ export default function NewRepairPage() {
         {(cameraError || error) && (
           <ErrorBanner message={cameraError ?? error ?? "Unknown error"} onDismiss={() => setError(null)} />
         )}
+        </div>{/* end left column */}
 
-        <section className="grid gap-6 lg:grid-cols-[1fr]">
+        <section className="lg:sticky lg:top-4">
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -356,7 +358,7 @@ export default function NewRepairPage() {
               </div>
             )}
 
-            <div className="mt-5 flex max-h-[28rem] min-h-[16rem] flex-col gap-3 overflow-y-auto">
+            <div className="mt-5 flex max-h-[calc(100vh-22rem)] min-h-[16rem] flex-col gap-3 overflow-y-auto">
               {messages.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm leading-6 text-slate-400">
                   Tap the mic, describe what is wrong, and keep the item in view. The first thing you say starts the session.
@@ -388,6 +390,7 @@ export default function NewRepairPage() {
         </section>
       </div>
     </main>
+
   );
 }
 
