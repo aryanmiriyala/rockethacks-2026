@@ -4,8 +4,6 @@ import {
   getInspectionSessionRecord,
   updateSession,
 } from "@/server/clients/aws/dynamodb";
-import { validateLabels } from "@/server/clients/aws/rekognition";
-import { putImageObject } from "@/server/clients/aws/s3";
 import { runInspectionTurn } from "@/server/clients/featherless";
 import { inspectLiveFrame } from "@/server/clients/gemini";
 import type {
@@ -20,6 +18,22 @@ import type {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+
+    promise
+      .then((value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
 }
 
 function createFallbackFinding(transcript: string): InspectionFinding {
@@ -61,13 +75,6 @@ function normalizeFinding(
       ? finding!.safetyWarnings.filter(Boolean)
       : safetyWarnings,
   };
-}
-
-async function uploadFrame(sessionId: string, frameBase64: string) {
-  const bytes = Buffer.from(frameBase64, "base64");
-  const key = `inspection/${sessionId}/${Date.now()}.jpg`;
-  await putImageObject(key, bytes, "image/jpeg");
-  return key;
 }
 
 export async function createInspectionSession(
@@ -131,41 +138,29 @@ export async function processInspectionTurn(
   const frames: InspectionFrame[] = [...session.frames];
 
   if (request.frameBase64) {
-    let s3Key: string | undefined;
-
     try {
-      s3Key = await uploadFrame(session.sessionId, request.frameBase64);
-    } catch {
-      s3Key = undefined;
-    }
-
-    if (s3Key) {
-      try {
-        rekognitionLabels = await validateLabels(s3Key);
-      } catch {
-        rekognitionLabels = [];
-      }
-    }
-
-    try {
-      const vision = await inspectLiveFrame({
-        imageBase64: request.frameBase64,
-        userProblem: session.userProblem,
-        transcript: request.transcript,
-        previousSummary: session.latestFinding?.issueSummary ?? null,
-      });
+      const vision = await withTimeout(
+        inspectLiveFrame({
+          imageBase64: request.frameBase64,
+          userProblem: session.userProblem,
+          transcript: request.transcript,
+          previousSummary: session.latestFinding?.issueSummary ?? null,
+        }),
+        2200,
+        "Gemini live inspection"
+      );
 
       itemLabel = vision.itemLabel || itemLabel;
       frameSummary = vision.visibleIssue;
       requestedView = vision.requestedView;
       safetyWarnings = vision.safetyWarnings;
-    } catch {
+    } catch (error) {
+      console.error("Live frame inspection failed:", error);
       frameSummary = null;
     }
 
     frames.push({
       capturedAt: nowIso(),
-      s3Key,
       source: request.frameSource ?? "manual",
       geminiSummary: frameSummary ?? undefined,
       rekognitionLabels,
@@ -179,17 +174,22 @@ export async function processInspectionTurn(
   };
 
   try {
-    reasoning = await runInspectionTurn({
-      userProblem: session.userProblem,
-      transcript: request.transcript,
-      itemLabel,
-      visionSummary: frameSummary,
-      rekognitionLabels,
-      previousFinding: session.latestFinding,
-      currentViewRequest: requestedView,
-      messages: [...session.messages, userMessage],
-    });
-  } catch {
+    reasoning = await withTimeout(
+      runInspectionTurn({
+        userProblem: session.userProblem,
+        transcript: request.transcript,
+        itemLabel,
+        visionSummary: frameSummary,
+        rekognitionLabels,
+        previousFinding: session.latestFinding,
+        currentViewRequest: requestedView,
+        messages: [...session.messages, userMessage],
+      }),
+      3000,
+      "Featherless reasoning"
+    );
+  } catch (error) {
+    console.error("Inspection reasoning failed:", error);
     reasoning.finding = {
       ...reasoning.finding,
       requestedView,
@@ -214,14 +214,29 @@ export async function processInspectionTurn(
     content: reasoning.spokenResponse,
     createdAt: nowIso(),
   };
-
-  const updated = await updateSession(session.sessionId, {
+  const nextMessages = [...session.messages, userMessage, assistantMessage];
+  const nextSession: InspectionSession = {
+    ...session,
+    updatedAt: nowIso(),
     itemLabel,
     currentViewRequest: normalizedFinding.requestedView ?? requestedView ?? null,
     latestFinding: normalizedFinding,
-    messages: [...session.messages, userMessage, assistantMessage],
+    messages: nextMessages,
     frames,
-  }) as InspectionSession;
+  };
 
-  return { session: updated, spokenResponse: reasoning.spokenResponse };
+  try {
+    const updated = await updateSession(session.sessionId, {
+      itemLabel,
+      currentViewRequest: normalizedFinding.requestedView ?? requestedView ?? null,
+      latestFinding: normalizedFinding,
+      messages: nextMessages,
+      frames,
+    }) as InspectionSession;
+
+    return { session: updated, spokenResponse: reasoning.spokenResponse };
+  } catch (error) {
+    console.error("Inspection session persistence failed:", error);
+    return { session: nextSession, spokenResponse: reasoning.spokenResponse };
+  }
 }

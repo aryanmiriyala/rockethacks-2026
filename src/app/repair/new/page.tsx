@@ -34,18 +34,20 @@ function isConversationEnd(text: string): boolean {
 
 export default function NewRepairPage() {
   const { videoRef, error: cameraError, isReady, startCamera, stopCamera, capturePhoto } = useCamera();
-  const { speak, audioUrl } = useSpeech();
+  const { speak, audioUrl, spokenText, fallbackNonce } = useSpeech();
   const { listening, transcript, question, start, stop, clearResult } = useSpeechRecognition();
   const [session, setSession] = useState<InspectionSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assistantSpeaking, setAssistantSpeaking] = useState(false);
   const [conversationClosed, setConversationClosed] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState("Tap the mic and talk while showing the item.");
 
   useEffect(() => {
     startCamera();
     return () => {
       setConversationClosed(true);
+      setVoiceStatus("Tap the mic and talk while showing the item.");
       stop();
       stopCamera();
     };
@@ -99,8 +101,11 @@ export default function NewRepairPage() {
       return;
     }
 
+    console.log("[inspection] submitting turn", { transcript: normalizedTranscript });
+
     setLoading(true);
     setError(null);
+    setVoiceStatus("Thinking...");
 
     try {
       const activeSession = session ?? (await createSession(normalizedTranscript));
@@ -127,9 +132,11 @@ export default function NewRepairPage() {
       }
 
       const { session: updatedSession, spokenResponse } = data as InspectionTurnResponse;
+      console.log("[inspection] turn response", { spokenResponse, sessionId: updatedSession.sessionId });
       setSession(updatedSession);
       clearResult();
       setConversationClosed(false);
+      setVoiceStatus("Assistant speaking...");
 
       speak(
         spokenResponse?.trim() ||
@@ -137,6 +144,7 @@ export default function NewRepairPage() {
       );
     } catch (turnError) {
       setError(turnError instanceof Error ? turnError.message : "Inspection turn failed");
+      setVoiceStatus("Tap the mic and talk while showing the item.");
     } finally {
       setLoading(false);
     }
@@ -145,11 +153,13 @@ export default function NewRepairPage() {
   function handleVoiceToggle() {
     if (listening) {
       setConversationClosed(true);
+      setVoiceStatus("Conversation paused. Tap the mic to continue.");
       stop();
       return;
     }
 
     setConversationClosed(false);
+    setVoiceStatus("Listening...");
     clearResult();
     start();
   }
@@ -160,10 +170,12 @@ export default function NewRepairPage() {
     }
 
     const nextQuestion = question.trim();
+    console.log("[inspection] recognized utterance", { question: nextQuestion });
     clearResult();
 
     if (isConversationEnd(nextQuestion)) {
       setConversationClosed(true);
+      setVoiceStatus("Conversation paused. Tap the mic to continue.");
       speak("Okay. I’ll stop listening now. Tap the mic if you want to continue.");
       return;
     }
@@ -176,12 +188,22 @@ export default function NewRepairPage() {
   function handlePlaybackChange(playing: boolean) {
     setAssistantSpeaking(playing);
 
+    if (playing) {
+      setVoiceStatus("Assistant speaking...");
+      return;
+    }
+
     if (!playing && session && !loading && !listening && !conversationClosed) {
-      try {
-        start();
-      } catch (voiceError) {
-        console.error("Auto-restart listening failed:", voiceError);
-      }
+      setVoiceStatus("Listening...");
+      window.setTimeout(() => {
+        if (!loading && !listening && !conversationClosed) {
+          try {
+            start();
+          } catch (voiceError) {
+            console.error("Auto-restart listening failed:", voiceError);
+          }
+        }
+      }, 250);
     }
   }
 
@@ -230,7 +252,9 @@ export default function NewRepairPage() {
                           ? liveTranscript || "Listening now..."
                           : conversationClosed
                             ? "Conversation paused. Tap the mic to continue."
-                          : "Tap the mic and talk while showing the item."}
+                          : loading
+                            ? "Thinking..."
+                            : voiceStatus}
                     </p>
                   </div>
                 </div>
@@ -269,7 +293,12 @@ export default function NewRepairPage() {
             </div>
           </div>
 
-          <AudioPlayer src={audioUrl} onPlaybackChange={handlePlaybackChange} />
+          <AudioPlayer
+            src={audioUrl}
+            fallbackText={spokenText}
+            fallbackNonce={fallbackNonce}
+            onPlaybackChange={handlePlaybackChange}
+          />
         </section>
 
         {(cameraError || error) && (

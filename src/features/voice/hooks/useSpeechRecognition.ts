@@ -22,6 +22,7 @@ export interface SpeechRecognitionResult {
 export function useSpeechRecognition(): SpeechRecognitionResult {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const silenceTimeoutRef = useRef<number | null>(null);
+  const lastTranscriptRef = useRef("");
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [keyword, setKeyword] = useState<Keyword | null>(null);
@@ -31,6 +32,27 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
     if (silenceTimeoutRef.current) {
       window.clearTimeout(silenceTimeoutRef.current);
       silenceTimeoutRef.current = null;
+    }
+  }, []);
+
+  const promoteTranscript = useCallback((rawText: string) => {
+    const spokenText = rawText.trim();
+    if (!spokenText) {
+      return;
+    }
+
+    const normalizedText = spokenText.toLowerCase();
+    const detected = KEYWORDS.find((kw) => normalizedText.includes(kw));
+
+    if (detected) {
+      setKeyword(detected);
+      setQuestion(null);
+      return;
+    }
+
+    if (spokenText.length > 3) {
+      setQuestion(spokenText);
+      setKeyword(null);
     }
   }, []);
 
@@ -61,10 +83,17 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
-    recognition.onstart = () => setListening(true);
+    recognition.onstart = () => {
+      lastTranscriptRef.current = "";
+      setTranscript("");
+      setListening(true);
+    };
     recognition.onend = () => {
       setListening(false);
       clearSilenceTimeout();
+      if (!question && !keyword && lastTranscriptRef.current.trim().length > 3) {
+        promoteTranscript(lastTranscriptRef.current);
+      }
       if (recognitionRef.current === recognition) {
         recognitionRef.current = null;
       }
@@ -76,24 +105,16 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
         .join(" ")
         .trim();
 
+      lastTranscriptRef.current = spokenText;
       setTranscript(spokenText);
       clearSilenceTimeout();
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0].transcript.trim();
-        const normalizedText = text.toLowerCase();
 
         if (result.isFinal) {
-          const detected = KEYWORDS.find((kw) => normalizedText.includes(kw));
-          if (detected) {
-            setKeyword(detected);
-            setQuestion(null);
-          } else if (spokenText.length > 3) {
-            setQuestion(spokenText);
-            setKeyword(null);
-          }
-
+          promoteTranscript(spokenText || text);
           recognition.stop();
           return;
         }
@@ -117,7 +138,7 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [clearSilenceTimeout]);
+  }, [clearSilenceTimeout, keyword, promoteTranscript, question]);
 
   const stop = useCallback(() => {
     if (recognitionRef.current) {
@@ -128,12 +149,14 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
     }
     setListening(false);
     setTranscript("");
+    lastTranscriptRef.current = "";
   }, [clearSilenceTimeout]);
 
   const clearResult = useCallback(() => {
     setKeyword(null);
     setQuestion(null);
     setTranscript("");
+    lastTranscriptRef.current = "";
   }, []);
 
   useEffect(() => {
