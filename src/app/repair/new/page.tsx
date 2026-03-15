@@ -227,16 +227,16 @@ export default function NewRepairPage() {
   const liveTranscript = listening ? transcript : "";
 
   return (
-    <main className="min-h-screen bg-brand-dark text-white">
-      <div className="mx-auto grid max-w-7xl gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[1fr_400px] lg:items-start">
-        <div className="flex flex-col gap-4">
-        <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl shadow-black/20">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#15324a_0%,#0f172a_38%,#081018_100%)] text-white">
+      <div className="mx-auto grid max-w-[1600px] gap-4 px-3 py-3 sm:px-5 lg:min-h-screen lg:grid-cols-[minmax(0,1.55fr)_380px] lg:gap-5 lg:px-6 lg:py-5">
+        <div className="flex min-w-0 flex-col gap-4">
+        <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl shadow-black/30 lg:min-h-[calc(100vh-2.5rem)]">
           <video
             ref={videoRef}
             autoPlay
             playsInline
             muted
-            className="aspect-[4/5] w-full bg-black object-cover sm:aspect-[16/9]"
+            className="aspect-[4/5] h-full min-h-[28rem] w-full bg-black object-cover object-center sm:aspect-[16/10] lg:absolute lg:inset-0 lg:aspect-auto lg:min-h-0"
           />
 
           {!isReady && !cameraError && (
@@ -245,18 +245,18 @@ export default function NewRepairPage() {
             </div>
           )}
 
-          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 bg-gradient-to-b from-black/80 via-black/20 to-transparent p-4">
-            <div className="rounded-full border border-white/10 bg-black/45 px-3 py-2 text-sm text-slate-200">
+          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 bg-gradient-to-b from-black/85 via-black/30 to-transparent p-4 sm:p-5">
+            <div className="max-w-[75%] rounded-full border border-white/10 bg-black/50 px-3 py-2 text-sm text-slate-200 backdrop-blur-sm">
               {session?.currentViewRequest ?? "Point the camera at the item you want help with."}
             </div>
-            <div className="rounded-full border border-brand-green/30 bg-brand-green/10 px-3 py-2 text-xs uppercase tracking-[0.25em] text-brand-green">
+            <div className="rounded-full border border-brand-green/30 bg-brand-green/10 px-3 py-2 text-[11px] uppercase tracking-[0.25em] text-brand-green backdrop-blur-sm">
               Live view
             </div>
           </div>
 
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-4">
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/75 to-transparent p-4 sm:p-5">
             <div className="flex items-end justify-between gap-3">
-              <div className="max-w-[60%] rounded-2xl border border-white/10 bg-black/45 px-4 py-3">
+              <div className="max-w-[68%] rounded-[1.6rem] border border-white/10 bg-black/50 px-4 py-3 backdrop-blur-md sm:px-5">
                 <div className="flex items-center gap-3">
                   <VoiceWave active={listening || assistantSpeaking} tone={assistantSpeaking ? "speaking" : "listening"} />
                   <div>
@@ -282,7 +282,7 @@ export default function NewRepairPage() {
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 rounded-full border border-white/10 bg-black/45 p-2 backdrop-blur-md">
                 <button
                   type="button"
                   onClick={handleVoiceToggle}
@@ -324,23 +324,30 @@ export default function NewRepairPage() {
         )}
         </div>{/* end left column */}
 
-        <section className="lg:sticky lg:top-4">
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
+        <section className="lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
+          <div className="flex h-full flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] shadow-2xl shadow-black/20 backdrop-blur-xl">
+            <div className="border-b border-white/10 px-5 py-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.28em] text-brand-green/80">Conversation</p>
                 <h2 className="mt-2 text-xl font-semibold text-white">Guided inspection</h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  Keep talking naturally. The assistant should guide what to show next.
+                </p>
               </div>
               {session && (
-                <p className="text-xs text-slate-400">{session.frames.length} frames reviewed</p>
+                <p className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-slate-300">
+                  {session.frames.length} frames reviewed
+                </p>
               )}
+            </div>
             </div>
 
             {session?.latestFinding && (
-              <div className="mt-5 rounded-2xl border border-white/10 bg-brand-surface/60 p-4">
+              <div className="mx-5 mt-5 rounded-[1.5rem] border border-white/10 bg-black/20 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium text-white">Current read</p>
-                  <p className="text-xs uppercase tracking-[0.22em] text-brand-green">
+                  <p className="rounded-full bg-brand-green/10 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-brand-green">
                     {Math.round(session.latestFinding.confidence * 100)}% confidence
                   </p>
                 </div>
@@ -358,9 +365,9 @@ export default function NewRepairPage() {
               </div>
             )}
 
-            <div className="mt-5 flex max-h-[calc(100vh-22rem)] min-h-[16rem] flex-col gap-3 overflow-y-auto">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-5">
               {messages.length === 0 && (
-                <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm leading-6 text-slate-400">
+                <div className="rounded-[1.5rem] border border-dashed border-white/10 bg-black/10 p-4 text-sm leading-6 text-slate-400">
                   Tap the mic, describe what is wrong, and keep the item in view. The first thing you say starts the session.
                 </div>
               )}
@@ -368,10 +375,10 @@ export default function NewRepairPage() {
               {messages.map((entry, index) => (
                 <div
                   key={`${entry.createdAt}-${index}`}
-                  className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-6 ${
+                  className={`max-w-[92%] rounded-[1.4rem] border px-4 py-3 text-sm leading-6 shadow-sm ${
                     entry.role === "assistant"
-                      ? "self-start bg-brand-surface text-white"
-                      : "self-end bg-brand-green text-brand-dark"
+                      ? "self-start border-white/10 bg-white/8 text-white"
+                      : "self-end border-brand-green/20 bg-brand-green text-brand-dark"
                   }`}
                 >
                   <p>{entry.content}</p>
