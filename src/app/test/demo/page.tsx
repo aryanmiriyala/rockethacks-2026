@@ -4,10 +4,10 @@
 // No DynamoDB or Jaseci needed. Visit /test/demo
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import CameraCapture from "@/components/camera/CameraCapture";
-import Spinner from "@/components/ui/Spinner";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
-import type { DeviceIdentification, RepairStep } from "@/lib/types";
+import CameraCapture from "@/features/camera/components/CameraCapture";
+import Spinner from "@/shared/ui/Spinner";
+import { useSpeechRecognition } from "@/features/voice/hooks/useSpeechRecognition";
+import type { DeviceIdentification, RepairStep } from "@/shared/types";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

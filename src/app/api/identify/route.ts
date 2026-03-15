@@ -1,32 +1,18 @@
 // feat/vision-identify — owns this route
 import { NextRequest, NextResponse } from "next/server";
-import { identifyDeviceFromImage, observeDeviceProblem } from "@/lib/services/gemini";
-import type { DeviceIdentification, IdentifyRequest, IdentifyResponse } from "@/lib/types";
+import { identifyDevice } from "@/server/services/identify";
+import type { IdentifyRequest, IdentifyResponse } from "@/shared/types";
 
 export async function POST(req: NextRequest) {
-  const { imageBase64 }: IdentifyRequest = await req.json();
+  try {
+    const { imageBase64 }: IdentifyRequest = await req.json();
+    const identification = await identifyDevice(imageBase64);
 
-  // Run Gemini identification and Featherless vision observation in parallel
-  const [geminiResult, observationResult] = await Promise.allSettled([
-    identifyDeviceFromImage(imageBase64),
-    observeDeviceProblem(imageBase64),
-  ]);
-
-  if (geminiResult.status === "rejected") {
-    console.error("Gemini failed:", geminiResult.reason);
+    return NextResponse.json({ identification } satisfies IdentifyResponse);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Device identification failed";
+    console.error("Identify route failed:", error);
+    return NextResponse.json({ error: message }, { status: 502 });
   }
-  if (observationResult.status === "rejected") {
-    console.error("Featherless failed:", observationResult.reason);
-  }
-
-  const identification: DeviceIdentification =
-    geminiResult.status === "fulfilled"
-      ? geminiResult.value
-      : { device: "Unknown Device", part: "Unknown Part", confidence: 0 };
-
-  if (observationResult.status === "fulfilled") {
-    identification.problemObservation = observationResult.value;
-  }
-
-  return NextResponse.json({ identification } satisfies IdentifyResponse);
 }

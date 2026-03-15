@@ -1,10 +1,10 @@
 // feat/jaseci-orchestration — owns this route
 import { NextRequest, NextResponse } from "next/server";
-import { triggerRepairGraph } from "@/lib/services/jaseci";
-import type { OrchestrateRequest, OrchestrateResponse } from "@/lib/types";
+import { orchestrateRepair } from "@/server/services/orchestration";
+import type { OrchestrateRequest, OrchestrateResponse } from "@/shared/types";
 
 export async function POST(req: NextRequest) {
   const body: OrchestrateRequest = await req.json();
-  const result = await triggerRepairGraph(body.sessionId, body.event, body.payload);
+  const result = await orchestrateRepair(body);
   return NextResponse.json(result satisfies OrchestrateResponse);
 }

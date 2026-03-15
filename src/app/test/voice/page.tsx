@@ -5,8 +5,8 @@
 // Visit http://localhost:3000/test/voice
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
-import { MOCK_STEPS, HELP_TEXT } from "@/lib/mock/repairSteps";
+import { useSpeechRecognition } from "@/features/voice/hooks/useSpeechRecognition";
+import { MOCK_STEPS, HELP_TEXT } from "@/features/voice/mock/repairSteps";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 // feat/voice — owns this route
 import { NextRequest, NextResponse } from "next/server";
-import { streamSpeech } from "@/lib/services/elevenlabs";
-import type { SpeakRequest } from "@/lib/types";
+import { synthesizeSpeech } from "@/server/services/speech";
+import type { SpeakRequest } from "@/shared/types";
 
 export async function POST(req: NextRequest) {
   const { text, voiceId }: SpeakRequest = await req.json();
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const audioStream = await streamSpeech(text, voiceId);
+    const audioStream = await synthesizeSpeech(text, voiceId);
 
     return new Response(audioStream, {
       headers: {

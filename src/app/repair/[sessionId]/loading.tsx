@@ -1,4 +1,4 @@
-import Spinner from "@/components/ui/Spinner";
+import Spinner from "@/shared/ui/Spinner";
 
 export default function RepairSessionLoading() {
   return (
