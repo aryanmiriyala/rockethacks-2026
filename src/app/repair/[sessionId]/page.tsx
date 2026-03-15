@@ -3,10 +3,11 @@
 // feat/repair-walkthrough — owns this page
 // Teammate: wire up useRepairSession, StepCard, StepProgress, VoiceButton, AudioPlayer
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import useRepairSession from "@/features/repair/hooks/useRepairSession";
 import useSpeech from "@/features/voice/hooks/useSpeech";
+import { useSpeechRecognition } from "@/features/voice/hooks/useSpeechRecognition";
 import StepCard from "@/features/repair/components/StepCard";
 import StepProgress from "@/features/repair/components/StepProgress";
 import RepairComplete from "@/features/repair/components/RepairComplete";
@@ -18,9 +19,13 @@ import ErrorBanner from "@/shared/ui/ErrorBanner";
 export default function RepairSessionPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { session, loading, error, advanceStep, repeatStep, repeatNonce } = useRepairSession(sessionId);
-  const { speak, audioUrl, listening, startListening } = useSpeech();
+  const { speak, audioUrl } = useSpeech();
+  const { listening, transcript, keyword, question, start, stop, clearResult } = useSpeechRecognition();
+  const [voiceStatus, setVoiceStatus] = useState("");
+  const currentStepRef = useRef(session?.steps[session.currentStepNumber - 1] ?? null);
 
   const currentStep = session?.steps[session.currentStepNumber - 1];
+  currentStepRef.current = currentStep ?? null;
 
   // Speak the current step instruction when it changes
   useEffect(() => {
@@ -28,6 +33,67 @@ export default function RepairSessionPage() {
       speak(currentStep.voicePrompt);
     }
   }, [currentStep?.stepNumber, repeatNonce, speak, currentStep?.voicePrompt]);
+
+  const askFollowUp = useCallback(async (userQuestion: string) => {
+    const context = currentStepRef.current?.instruction ?? "";
+    setVoiceStatus("Answering your question...");
+    stop();
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: userQuestion, context }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error ?? `Chat failed (${res.status})`);
+      }
+
+      if (data.answer) {
+        speak(data.answer);
+      }
+      setVoiceStatus("Tap the mic to keep talking.");
+    } catch (chatError) {
+      setVoiceStatus(chatError instanceof Error ? chatError.message : "Voice question failed");
+    }
+  }, [speak, stop]);
+
+  useEffect(() => {
+    if (!keyword) {
+      return;
+    }
+
+    clearResult();
+    setVoiceStatus(`Heard "${keyword}"`);
+
+    if (keyword === "done" || keyword === "next") {
+      advanceStep().catch((advanceError) => {
+        setVoiceStatus(advanceError instanceof Error ? advanceError.message : "Could not advance step");
+      });
+      return;
+    }
+
+    if (keyword === "repeat") {
+      repeatStep();
+      return;
+    }
+
+    if (keyword === "help") {
+      speak("Say done or next to move on, repeat to hear this step again, or ask a question about the repair.");
+    }
+  }, [advanceStep, clearResult, keyword, repeatStep, speak]);
+
+  useEffect(() => {
+    if (!question) {
+      return;
+    }
+
+    clearResult();
+    askFollowUp(question);
+  }, [askFollowUp, clearResult, question]);
 
   if (loading) return <div className="flex min-h-screen items-center justify-center"><Spinner /></div>;
   if (error) return <div className="p-6"><ErrorBanner message={error} /></div>;
@@ -67,13 +133,27 @@ export default function RepairSessionPage() {
 
       <AudioPlayer src={audioUrl} />
 
+      {(transcript || voiceStatus) && (
+        <div className="rounded-lg bg-brand-surface px-4 py-3">
+          {transcript && (
+            <p className="text-sm text-white">
+              <span className="mr-2 text-xs uppercase tracking-wide text-brand-muted">Heard</span>
+              {transcript}
+            </p>
+          )}
+          {voiceStatus && (
+            <p className="mt-1 text-xs text-brand-muted">{voiceStatus}</p>
+          )}
+        </div>
+      )}
+
       <VoiceButton
         listening={listening}
-        onPress={startListening}
-        onVoiceCommand={(cmd) => {
-          if (cmd === "done" || cmd === "next") advanceStep();
-          if (cmd === "repeat") repeatStep();
+        onPress={() => {
+          setVoiceStatus("Listening...");
+          start();
         }}
+        onVoiceCommand={() => {}}
       />
     </main>
   );
