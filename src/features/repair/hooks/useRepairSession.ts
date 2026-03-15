@@ -27,11 +27,13 @@ export default function useRepairSession(sessionId: string) {
     fetchSession();
   }, [fetchSession]);
 
+  const MAX_STEPS = 5;
+
   const advanceStep = useCallback(async () => {
     if (!session) return;
     const currentStep = session.steps[session.currentStepNumber - 1];
 
-    if (currentStep?.isTerminal) {
+    if (currentStep?.isTerminal || session.currentStepNumber >= MAX_STEPS) {
       await fetch(`/api/session/${sessionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

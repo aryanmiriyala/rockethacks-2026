@@ -53,7 +53,10 @@ The user will say "Done" when they complete a step. Respond as if speaking direc
     ? `User says: "${context.userMessage}"\n\n`
     : "";
 
-  const prompt = `${previousContext}${userMessage}What is step ${context.stepNumber} to repair the ${context.part} on a ${context.device}?
+  const MAX_STEPS = 5;
+  const isLastAllowed = context.stepNumber >= MAX_STEPS;
+
+  const prompt = `${previousContext}${userMessage}What is step ${context.stepNumber} of at most ${MAX_STEPS} to repair the ${context.part} on a ${context.device}?
 
 Respond ONLY with valid JSON:
 {
@@ -62,7 +65,7 @@ Respond ONLY with valid JSON:
   "isTerminal": false
 }
 
-Set isTerminal to true only if this is the final step needed to complete the repair.`;
+IMPORTANT: Set isTerminal to true if this step completes the repair OR if stepNumber is ${MAX_STEPS}.${isLastAllowed ? " This IS the final step — you MUST set isTerminal to true." : ""}`;
 
   const res = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
     method: "POST",
