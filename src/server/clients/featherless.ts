@@ -219,42 +219,58 @@ export async function runInspectionTurn(
   input: InspectionReasoningInput
 ): Promise<InspectionReasoningResult> {
   const transcriptIntent = inferTranscriptIntent(input.transcript);
-  const systemPrompt = `You are a voice-first sustainability assistant helping a user decide what to do with a household item.
-You must be user-led, evidence-based, and cautious.
-Do not jump straight into repair instructions.
-First gather evidence, ask for specific views, and only then recommend repair, replace_part, reuse, donate, recycle, or unsafe.
-When the user asks a direct question, answer it directly in plain language before asking for more evidence.
-When the user gives a status update or describes what they are showing, interpret it and explain what it means.
-You are not just labeling images. You are helping the user understand what they are looking at and what to do next.
-Return JSON only.`;
 
-  const recentMessages = input.messages.slice(-6).map((message) => ({
+  // Extract previously suggested actions from conversation so the model doesn't repeat them
+  const previousSuggestions = input.messages
+    .filter((m) => m.role === "assistant")
+    .map((m) => m.content)
+    .join(" | ");
+
+  const recentMessages = input.messages.slice(-8).map((message) => ({
     role: message.role,
     content: message.content,
   }));
 
-  const prompt = JSON.stringify({
-    userProblem: input.userProblem,
-    latestTranscript: input.transcript,
-    transcriptIntent,
-    itemLabel: input.itemLabel ?? null,
-    visionSummary: input.visionSummary ?? null,
-    rekognitionLabels: input.rekognitionLabels ?? [],
-    previousFinding: input.previousFinding ?? null,
-    currentViewRequest: input.currentViewRequest ?? null,
-    recentMessages,
-    responseFormat: {
-      spokenResponse: "Short conversational response for ElevenLabs that directly addresses the user's latest utterance.",
-      finding: {
-        issueSummary: "Current best hypothesis grounded in visible evidence and the user's latest description.",
-        confidence: "0 to 1 number",
-        recommendedOutcome: "inspect_more | repair | replace_part | reuse | donate | recycle | unsafe",
-        rationale: "Short explanation for why that outcome is currently best based on what the user said and what is visible.",
-        requestedView: "Specific next view to request, or null",
-        safetyWarnings: ["Short warnings only when relevant"],
-      },
-    },
-  });
+  const questionsAsked = input.messages
+    .filter((m) => m.role === "assistant" && m.content.includes("?"))
+    .length;
+  const questionLimitReached = questionsAsked >= 3;
+
+  const systemPrompt = `You are Fix-It-Flow, a conversational sustainability repair mentor. Your job is to help the user fix or responsibly handle a broken household item through a natural back-and-forth conversation.
+
+CONVERSATION RULES:
+- ${questionLimitReached ? "QUESTIONS LIMIT REACHED (3/3). You must now commit to a specific recommendation — do NOT ask any more questions." : `You have asked ${questionsAsked}/3 follow-up questions. ${questionsAsked < 3 ? "You may ask ONE more targeted question only if it would materially change your recommendation, otherwise give a concrete action." : ""}`}
+- NEVER repeat a suggestion already mentioned in the conversation history.
+- Be specific: say exactly which part to check, which tool to use, how to test it. Avoid vague advice like "check the wiring".
+- Sustainability priority: repair > replace only the broken part > clean/adjust/repurpose > donate > recycle. Buying new is always last.
+- If too complex for home repair, name a specific sustainable alternative (e.g. "iFixit has a guide for this exact part", "manufacturer sells this fuse for $2", "local repair cafe can do this in 20 min").
+- When you suggest an action, briefly say why it avoids waste or saves the item — one sentence is enough.
+- spokenResponse must be 2-3 sentences max. It will be read aloud by text-to-speech.
+- Return JSON only. No markdown.`;
+
+  const prompt = `Item: ${input.itemLabel ?? "unknown"}
+User's problem: "${input.userProblem}"
+Visual analysis: ${input.visionSummary ?? "none"}
+Previous assessment: ${input.previousFinding ? `${input.previousFinding.issueSummary} (confidence ${input.previousFinding.confidence}, outcome: ${input.previousFinding.recommendedOutcome})` : "none"}
+Already suggested: ${previousSuggestions || "nothing yet"}
+Transcript intent: ${transcriptIntent}
+Latest message: "${input.transcript}"
+
+Conversation so far:
+${recentMessages.map((m) => `${m.role === "user" ? "User" : "You"}: ${m.content}`).join("\n")}
+
+Respond with valid JSON only:
+{
+  "spokenResponse": "...",
+  "finding": {
+    "issueSummary": "Specific hypothesis about what is broken and why",
+    "confidence": 0.0,
+    "recommendedOutcome": "inspect_more | repair | replace_part | reuse | donate | recycle | unsafe",
+    "rationale": "Why this is the most sustainable next step given the conversation so far",
+    "requestedView": "Specific camera angle that would confirm your hypothesis, or null",
+    "safetyWarnings": []
+  }
+}`;
 
   const res = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
     method: "POST",
@@ -268,8 +284,8 @@ Return JSON only.`;
         { role: "system", content: systemPrompt },
         { role: "user", content: prompt },
       ],
-      temperature: 0.25,
-      max_tokens: 220,
+      temperature: 0.3,
+      max_tokens: 320,
     }),
   });
 
