@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(echo $ELEVENLABS_API_KEY)"
+    ]
+  }
+}

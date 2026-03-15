@@ -20,9 +20,9 @@ export default function PhotoPreview({ blob, onConfirm, onRetake }: Props) {
   }, [blob]);
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="fixed inset-0 flex flex-col">
       {src && (
-        <img src={src} alt="Captured device" className="w-full flex-1 object-cover" />
+        <img src={src} alt="Captured device" className="w-full flex-1 min-h-0 object-cover" />
       )}
 
       <div className="p-4 flex gap-3">

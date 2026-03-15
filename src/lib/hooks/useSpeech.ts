@@ -26,9 +26,7 @@ export default function useSpeech() {
 
   // Web Speech API STT — fires onVoiceCommand when user speaks
   const startListening = useCallback((onCommand: (cmd: VoiceCommand) => void) => {
-    const SpeechRecognition =
-      (window as Window & { SpeechRecognition?: typeof window.SpeechRecognition; webkitSpeechRecognition?: typeof window.SpeechRecognition }).SpeechRecognition ??
-      (window as Window & { webkitSpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       console.warn("Web Speech API not supported in this browser");
