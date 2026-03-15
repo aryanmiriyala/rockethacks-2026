@@ -133,45 +133,47 @@ export async function processInspectionTurn(
   const frames: InspectionFrame[] = [...session.frames];
   const fallback = createFallbackFinding(request.transcript);
 
-  // Run Gemini (vision) and Featherless (reasoning) in parallel.
-  // Featherless gets the PREVIOUS turn's visual summary so it has image context
-  // without waiting for Gemini to finish this turn.
-  const [visionSettled, reasoningSettled] = await Promise.allSettled([
-    request.frameBase64
-      ? withTimeout(
-          inspectLiveFrame({
-            imageBase64: request.frameBase64,
-            userProblem: session.userProblem,
-            transcript: request.transcript,
-            previousSummary: session.latestFinding?.issueSummary ?? null,
-          }),
-          8000,
-          "Gemini vision"
-        )
-      : Promise.resolve(null),
-    withTimeout(
+  // Step 1 — Gemini vision: describe what is visible in the current frame (~2-4s).
+  // Must finish before Featherless so reasoning has fresh visual context, not last turn's.
+  let vision: { itemLabel: string; visibleIssue: string; confidence: number; requestedView: string | null; safetyWarnings: string[] } | null = null;
+  if (request.frameBase64) {
+    try {
+      vision = await withTimeout(
+        inspectLiveFrame({
+          imageBase64: request.frameBase64,
+          userProblem: session.userProblem,
+          transcript: request.transcript,
+          previousSummary: session.latestFinding?.issueSummary ?? null,
+        }),
+        6000,
+        "Gemini vision"
+      );
+    } catch (err) {
+      console.error("Gemini vision failed:", err);
+    }
+  }
+
+  // Step 2 — Featherless reasoning: now has THIS turn's visual summary, not last turn's.
+  let reasoning: { spokenResponse: string; finding: typeof fallback };
+  try {
+    reasoning = await withTimeout(
       runInspectionTurn({
         userProblem: session.userProblem,
         transcript: request.transcript,
-        itemLabel: session.itemLabel,
-        visionSummary: session.latestFinding?.issueSummary ?? null,
+        itemLabel: vision?.itemLabel ?? session.itemLabel,
+        visionSummary: vision?.visibleIssue ?? null,   // ← current frame, not previous
         rekognitionLabels: [],
         previousFinding: session.latestFinding,
-        currentViewRequest: session.currentViewRequest,
+        currentViewRequest: vision?.requestedView ?? session.currentViewRequest,
         messages: [...session.messages, userMessage],
       }),
       12000,
       "Featherless reasoning"
-    ),
-  ]);
-
-  const vision = visionSettled.status === "fulfilled" ? visionSettled.value : null;
-  if (visionSettled.status === "rejected") console.error("Gemini vision failed:", visionSettled.reason);
-
-  const reasoning = reasoningSettled.status === "fulfilled"
-    ? reasoningSettled.value
-    : { spokenResponse: fallback.issueSummary, finding: fallback };
-  if (reasoningSettled.status === "rejected") console.error("Featherless reasoning failed:", reasoningSettled.reason);
+    );
+  } catch (err) {
+    console.error("Featherless reasoning failed:", err);
+    reasoning = { spokenResponse: fallback.issueSummary, finding: fallback };
+  }
 
   if (request.frameBase64) {
     frames.push({
