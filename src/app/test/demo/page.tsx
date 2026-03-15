@@ -141,6 +141,15 @@ export default function DemoPage() {
     const stepList = stepsRef.current;
 
     if (keyword === "done" || keyword === "next") {
+      // If current step is the last one, end naturally — no need to say "stop"
+      if (stepList[idx]?.isTerminal) {
+        addLog(`Step ${idx + 1} is terminal → repair complete`);
+        stop();
+        speakAndResume("Great job! The repair is complete. Well done.", false);
+        setPhase("complete");
+        return;
+      }
+
       const nextIdx = idx + 1;
       setStepIdx(nextIdx);
       addLog(`"${keyword}" → step ${nextIdx + 1}`);
@@ -156,11 +165,15 @@ export default function DemoPage() {
       if (stepList[idx]) speakAndResume(stepList[idx].voicePrompt, true);
     } else if (keyword === "help") {
       speakAndResume(
-        "Say 'done' or 'next' to move to the next step, 'repeat' to hear the current step again, or ask me any question.",
+        "Say 'done' or 'next' to move to the next step, 'repeat' to hear the current step again, 'stop' to end the session, or ask me any question.",
         true,
       );
+    } else if (keyword === "stop") {
+      addLog(`"stop" → session ended`);
+      stop();
+      setPhase("complete");
     }
-  }, [keyword, clearResult, speakAndResume, loadAndSpeakStep, addLog]);
+  }, [keyword, clearResult, speakAndResume, loadAndSpeakStep, stop, setPhase, addLog]);
 
   // ── question handler ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -324,6 +337,7 @@ export default function DemoPage() {
         <p><span className="text-brand-green font-mono">"done" / "next"</span> — next step</p>
         <p><span className="text-brand-green font-mono">"repeat"</span> — hear again</p>
         <p><span className="text-brand-green font-mono">"help"</span> — navigation tips</p>
+        <p><span className="text-brand-green font-mono">"stop"</span> — end session</p>
         <p><span className="text-brand-green font-mono">any question</span> — AI answers back</p>
       </div>
 
