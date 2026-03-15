@@ -35,7 +35,7 @@ function isConversationEnd(text: string): boolean {
 export default function NewRepairPage() {
   const { videoRef, error: cameraError, isReady, startCamera, stopCamera, capturePhoto } = useCamera();
   const { speak, audioUrl, spokenText, fallbackNonce } = useSpeech();
-  const { listening, transcript, question, start, stop, clearResult } = useSpeechRecognition();
+  const { listening, transcript, keyword, question, start, stop, clearResult } = useSpeechRecognition();
   const [session, setSession] = useState<InspectionSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,26 +164,43 @@ export default function NewRepairPage() {
     start();
   }
 
-  useEffect(() => {
-    if (!question?.trim() || loading) {
+  function handleRecognizedUtterance(rawUtterance: string) {
+    const nextUtterance = rawUtterance.trim();
+    if (!nextUtterance) {
       return;
     }
 
-    const nextQuestion = question.trim();
-    console.log("[inspection] recognized utterance", { question: nextQuestion });
+    console.log("[inspection] recognized utterance", { utterance: nextUtterance });
     clearResult();
 
-    if (isConversationEnd(nextQuestion)) {
+    if (isConversationEnd(nextUtterance) || nextUtterance.toLowerCase() === "stop") {
       setConversationClosed(true);
       setVoiceStatus("Conversation paused. Tap the mic to continue.");
       speak("Okay. I’ll stop listening now. Tap the mic if you want to continue.");
       return;
     }
 
-    submitTurn(nextQuestion).catch((turnError) => {
+    submitTurn(nextUtterance).catch((turnError) => {
       setError(turnError instanceof Error ? turnError.message : "Inspection turn failed");
+      setVoiceStatus("Tap the mic and talk while showing the item.");
     });
-  }, [clearResult, loading, question, speak]);
+  }
+
+  useEffect(() => {
+    if (!question?.trim() || loading) {
+      return;
+    }
+
+    handleRecognizedUtterance(question);
+  }, [loading, question]);
+
+  useEffect(() => {
+    if (!keyword || loading) {
+      return;
+    }
+
+    handleRecognizedUtterance(keyword);
+  }, [keyword, loading]);
 
   function handlePlaybackChange(playing: boolean) {
     setAssistantSpeaking(playing);
