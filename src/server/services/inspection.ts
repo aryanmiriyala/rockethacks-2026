@@ -130,83 +130,64 @@ export async function processInspectionTurn(
     createdAt: nowIso(),
   };
 
-  let itemLabel = session.itemLabel ?? null;
-  let frameSummary: string | null = null;
-  let requestedView = session.currentViewRequest ?? null;
-  let safetyWarnings = session.latestFinding?.safetyWarnings ?? [];
-  let rekognitionLabels: string[] = [];
   const frames: InspectionFrame[] = [...session.frames];
+  const fallback = createFallbackFinding(request.transcript);
 
-  if (request.frameBase64) {
-    try {
-      const vision = await withTimeout(
-        inspectLiveFrame({
-          imageBase64: request.frameBase64,
-          userProblem: session.userProblem,
-          transcript: request.transcript,
-          previousSummary: session.latestFinding?.issueSummary ?? null,
-        }),
-        2200,
-        "Gemini live inspection"
-      );
-
-      itemLabel = vision.itemLabel || itemLabel;
-      frameSummary = vision.visibleIssue;
-      requestedView = vision.requestedView;
-      safetyWarnings = vision.safetyWarnings;
-    } catch (error) {
-      console.error("Live frame inspection failed:", error);
-      frameSummary = null;
-    }
-
-    frames.push({
-      capturedAt: nowIso(),
-      source: request.frameSource ?? "manual",
-      geminiSummary: frameSummary ?? undefined,
-      rekognitionLabels,
-    });
-  }
-
-  let reasoning = {
-    spokenResponse:
-      "I need a little more context before I can recommend the next step. Tell me what changed, and show me the area that looks off.",
-    finding: createFallbackFinding(request.transcript),
-  };
-
-  try {
-    reasoning = await withTimeout(
+  // Run Gemini (vision) and Featherless (reasoning) in parallel.
+  // Featherless gets the PREVIOUS turn's visual summary so it has image context
+  // without waiting for Gemini to finish this turn.
+  const [visionSettled, reasoningSettled] = await Promise.allSettled([
+    request.frameBase64
+      ? withTimeout(
+          inspectLiveFrame({
+            imageBase64: request.frameBase64,
+            userProblem: session.userProblem,
+            transcript: request.transcript,
+            previousSummary: session.latestFinding?.issueSummary ?? null,
+          }),
+          8000,
+          "Gemini vision"
+        )
+      : Promise.resolve(null),
+    withTimeout(
       runInspectionTurn({
         userProblem: session.userProblem,
         transcript: request.transcript,
-        itemLabel,
-        visionSummary: frameSummary,
-        rekognitionLabels,
+        itemLabel: session.itemLabel,
+        visionSummary: session.latestFinding?.issueSummary ?? null,
+        rekognitionLabels: [],
         previousFinding: session.latestFinding,
-        currentViewRequest: requestedView,
+        currentViewRequest: session.currentViewRequest,
         messages: [...session.messages, userMessage],
       }),
-      3000,
+      12000,
       "Featherless reasoning"
-    );
-  } catch (error) {
-    console.error("Inspection reasoning failed:", error);
-    reasoning.finding = {
-      ...reasoning.finding,
-      requestedView,
-      safetyWarnings,
-    };
-    reasoning.spokenResponse = /\b(how|what|why|where|when|can i|should i|is it|do i|could it)\b/.test(
-      request.transcript.toLowerCase()
-    )
-      ? "I heard your question, but I need a clearer look at the exact part you mean before I answer confidently."
-      : reasoning.spokenResponse;
+    ),
+  ]);
+
+  const vision = visionSettled.status === "fulfilled" ? visionSettled.value : null;
+  if (visionSettled.status === "rejected") console.error("Gemini vision failed:", visionSettled.reason);
+
+  const reasoning = reasoningSettled.status === "fulfilled"
+    ? reasoningSettled.value
+    : { spokenResponse: fallback.issueSummary, finding: fallback };
+  if (reasoningSettled.status === "rejected") console.error("Featherless reasoning failed:", reasoningSettled.reason);
+
+  if (request.frameBase64) {
+    frames.push({
+      capturedAt: nowIso(),
+      source: request.frameSource ?? "manual",
+      geminiSummary: vision?.visibleIssue ?? undefined,
+      rekognitionLabels: [],
+    });
   }
 
+  const itemLabel = vision?.itemLabel || session.itemLabel;
   const normalizedFinding = normalizeFinding(
     reasoning.finding,
-    createFallbackFinding(request.transcript),
-    requestedView,
-    safetyWarnings
+    fallback,
+    vision?.requestedView ?? reasoning.finding.requestedView ?? null,
+    vision?.safetyWarnings ?? reasoning.finding.safetyWarnings ?? []
   );
 
   const assistantMessage: InspectionMessage = {
@@ -218,8 +199,8 @@ export async function processInspectionTurn(
   const nextSession: InspectionSession = {
     ...session,
     updatedAt: nowIso(),
-    itemLabel,
-    currentViewRequest: normalizedFinding.requestedView ?? requestedView ?? null,
+    itemLabel: itemLabel ?? null,
+    currentViewRequest: normalizedFinding.requestedView ?? null,
     latestFinding: normalizedFinding,
     messages: nextMessages,
     frames,
@@ -227,8 +208,8 @@ export async function processInspectionTurn(
 
   try {
     const updated = await updateSession(session.sessionId, {
-      itemLabel,
-      currentViewRequest: normalizedFinding.requestedView ?? requestedView ?? null,
+      itemLabel: itemLabel ?? null,
+      currentViewRequest: normalizedFinding.requestedView ?? null,
       latestFinding: normalizedFinding,
       messages: nextMessages,
       frames,

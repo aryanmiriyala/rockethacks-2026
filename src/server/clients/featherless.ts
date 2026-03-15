@@ -134,6 +134,87 @@ function inferTranscriptIntent(transcript: string): string {
   return "observation";
 }
 
+export interface InspectionTurnInput {
+  imageBase64?: string | null;
+  userProblem: string;
+  transcript: string;
+  itemLabel?: string | null;
+  previousFinding?: InspectionFinding | null;
+  previousMessages: Array<{ role: string; content: string }>;
+}
+
+export interface InspectionTurnResult {
+  spokenResponse: string;
+  itemLabel: string;
+  finding: InspectionFinding;
+}
+
+// Single Featherless call using Qwen2.5-VL — handles vision + reasoning together.
+// Replaces the old inspectLiveFrame (Gemini) + runInspectionTurn (Llama) two-step.
+export async function inspectAndReason(input: InspectionTurnInput): Promise<InspectionTurnResult> {
+  const conversationContext = input.previousMessages
+    .slice(-6)
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+    .join("\n");
+
+  const systemPrompt = `You are a voice-first sustainability assistant helping a user diagnose and fix a broken household item.
+Your priorities in order: repair it > replace only the broken part > reuse/repurpose > donate > recycle. Buying new is always the last resort.
+Be conversational, concise, and encouraging. Answer the user's question directly before asking for more evidence.
+When suggesting a fix, briefly explain why it is the most sustainable choice.
+Return JSON only — no markdown, no extra text.`;
+
+  const userPrompt = `User's stated problem: "${input.userProblem}"
+${input.itemLabel ? `Item identified as: "${input.itemLabel}"` : ""}
+${input.previousFinding ? `Previous assessment: "${input.previousFinding.issueSummary}" (confidence ${input.previousFinding.confidence})` : ""}
+${conversationContext ? `\nRecent conversation:\n${conversationContext}` : ""}
+
+Latest message from user: "${input.transcript}"
+${input.imageBase64 ? "A camera frame is attached — analyse what is visible and combine it with the user's description." : "No camera frame this turn — rely on conversation context."}
+
+Respond ONLY with valid JSON:
+{
+  "spokenResponse": "Short warm spoken reply (1-3 sentences). Address what the user just said first.",
+  "itemLabel": "Name of the item (e.g. 'Floor Lamp')",
+  "finding": {
+    "issueSummary": "Current best hypothesis based on visible evidence and user description",
+    "confidence": 0.0,
+    "recommendedOutcome": "inspect_more | repair | replace_part | reuse | donate | recycle | unsafe",
+    "rationale": "Why this outcome — include sustainability reasoning",
+    "requestedView": "Specific next camera view to request, or null",
+    "safetyWarnings": []
+  }
+}`;
+
+  const userContent = input.imageBase64
+    ? [
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${input.imageBase64}` } },
+        { type: "text", text: userPrompt },
+      ]
+    : userPrompt;
+
+  const res = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.FEATHERLESS_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.FEATHERLESS_VISION_MODEL ?? "Qwen/Qwen2.5-VL-7B-Instruct",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+      temperature: 0.25,
+      max_tokens: 350,
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Featherless inspectAndReason error: ${res.status}`);
+
+  const data = await res.json();
+  return extractJsonObject<InspectionTurnResult>(data.choices[0].message.content.trim());
+}
+
 export async function runInspectionTurn(
   input: InspectionReasoningInput
 ): Promise<InspectionReasoningResult> {
