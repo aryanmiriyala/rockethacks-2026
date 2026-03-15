@@ -79,8 +79,13 @@ export default function VoiceTestPage() {
         addLog(`"help" → reading tips`);
         speak(HELP_TEXT);
         break;
+      case "stop":
+        addLog(`"stop" → session ended`);
+        stop();
+        speak("Session stopped. Say 'Start Session' to begin again.");
+        break;
     }
-  }, [keyword, clearResult, speak, addLog]);
+  }, [keyword, clearResult, speak, stop, addLog]);
 
   // ── question handler ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -202,9 +207,10 @@ export default function VoiceTestPage() {
       {/* Voice command reference */}
       <div className="rounded-xl bg-brand-surface border border-white/10 p-4 text-xs space-y-1">
         <p className="font-semibold text-white mb-2">Voice commands</p>
-        <p><span className="text-brand-green font-mono">"done"</span> / <span className="text-brand-green font-mono">"next"</span> — advance step</p>
+        <p><span className="text-brand-green font-mono">"done" / "next"</span> — advance step</p>
         <p><span className="text-brand-green font-mono">"repeat"</span> — hear step again</p>
         <p><span className="text-brand-green font-mono">"help"</span> — hear navigation tips</p>
+        <p><span className="text-brand-green font-mono">"stop"</span> — end session</p>
         <p><span className="text-brand-green font-mono">any question</span> — ask about the repair → AI answers back</p>
       </div>
 
