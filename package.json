@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check:aws": "node scripts/check-aws.js"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.600.0",

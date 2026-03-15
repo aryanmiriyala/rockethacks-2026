@@ -1,7 +1,6 @@
 // feat/vision-identify — owns this route
 import { NextRequest, NextResponse } from "next/server";
-import { identifyDeviceFromImage } from "@/lib/services/gemini";
-import { observeDeviceProblem } from "@/lib/services/featherless";
+import { identifyDeviceFromImage, observeDeviceProblem } from "@/lib/services/gemini";
 import type { DeviceIdentification, IdentifyRequest, IdentifyResponse } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
