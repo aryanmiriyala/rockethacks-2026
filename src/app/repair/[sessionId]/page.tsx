@@ -70,6 +70,13 @@ export default function RepairSessionPage() {
     setVoiceStatus(`Heard "${keyword}"`);
 
     if (keyword === "done" || keyword === "next") {
+      // Last step — complete the repair naturally, no need to say "end session"
+      if (currentStepRef.current?.isTerminal) {
+        stop();
+        speak("Great job! The repair is complete. Well done.");
+        advanceStep().catch(() => {});
+        return;
+      }
       advanceStep().catch((advanceError) => {
         setVoiceStatus(advanceError instanceof Error ? advanceError.message : "Could not advance step");
       });
@@ -82,9 +89,16 @@ export default function RepairSessionPage() {
     }
 
     if (keyword === "help") {
-      speak("Say done or next to move on, repeat to hear this step again, or ask a question about the repair.");
+      speak("Say done or next to move on, repeat to hear this step again, say end session to stop early, or ask a question about the repair.");
+      return;
     }
-  }, [advanceStep, clearResult, keyword, repeatStep, speak]);
+
+    if (keyword === "stop") {
+      stop();
+      setVoiceStatus("Session ended.");
+      speak("Session ended. Thanks for using Fix-It-Flow.");
+    }
+  }, [advanceStep, clearResult, keyword, repeatStep, speak, stop]);
 
   useEffect(() => {
     if (!question) {
