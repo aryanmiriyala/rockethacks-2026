@@ -1,13 +1,14 @@
 "use client";
 
 // feat/voice — Web Speech API wrapper
-// Detects keywords (done/next/repeat/help) and free-form questions separately
+// Detects keywords (done/next/repeat/help/stop) and free-form questions separately
 
 import { useRef, useState, useCallback, useEffect } from "react";
 
-export type Keyword = "done" | "next" | "repeat" | "help";
+export type Keyword = "done" | "next" | "repeat" | "help" | "stop";
 
-const KEYWORDS: Keyword[] = ["done", "next", "repeat", "help"];
+// "stop" checked first so "stop" in a phrase doesn't accidentally match "done"
+const KEYWORDS: Keyword[] = ["stop", "done", "next", "repeat", "help"];
 
 export interface SpeechRecognitionResult {
   listening: boolean;
