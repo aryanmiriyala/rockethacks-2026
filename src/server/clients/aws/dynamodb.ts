@@ -1,14 +1,27 @@
 // feat/session-aws — owns this file
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import type { DeviceIdentification, RepairSession, UpdateSessionRequest } from "@/shared/types";
+import type {
+  DeviceIdentification,
+  InspectionSession,
+  RepairSession,
+  UpdateInspectionSessionRequest,
+  UpdateSessionRequest,
+} from "@/shared/types";
 import { getAwsConfig, getRequiredEnv } from "@/server/env";
 import { randomUUID } from "crypto";
 
 const client = new DynamoDBClient(getAwsConfig());
 
-const ddb = DynamoDBDocumentClient.from(client);
+const ddb = DynamoDBDocumentClient.from(client, {
+  marshallOptions: {
+    removeUndefinedValues: true,
+  },
+});
 const TABLE = getRequiredEnv("DYNAMODB_TABLE_NAME");
+
+type AppSession = RepairSession | InspectionSession;
+type SessionPatch = UpdateSessionRequest | UpdateInspectionSessionRequest;
 
 export async function createSession(identification: DeviceIdentification): Promise<string> {
   const sessionId = randomUUID();
@@ -34,10 +47,19 @@ export async function getSession(sessionId: string): Promise<RepairSession | nul
   return (result.Item as RepairSession) ?? null;
 }
 
+export async function createInspectionSessionRecord(session: InspectionSession): Promise<void> {
+  await ddb.send(new PutCommand({ TableName: TABLE, Item: session }));
+}
+
+export async function getInspectionSessionRecord(sessionId: string): Promise<InspectionSession | null> {
+  const result = await ddb.send(new GetCommand({ TableName: TABLE, Key: { sessionId } }));
+  return (result.Item as InspectionSession) ?? null;
+}
+
 export async function updateSession(
   sessionId: string,
-  patch: UpdateSessionRequest
-): Promise<RepairSession> {
+  patch: SessionPatch
+): Promise<AppSession> {
   const now = new Date().toISOString();
   const updates = { ...patch, updatedAt: now };
 
@@ -58,5 +80,5 @@ export async function updateSession(
     })
   );
 
-  return result.Attributes as RepairSession;
+  return result.Attributes as AppSession;
 }

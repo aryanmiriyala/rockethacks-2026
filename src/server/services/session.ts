@@ -43,5 +43,5 @@ export async function updateRepairSession(
   sessionId: string,
   patch: UpdateSessionRequest
 ): Promise<RepairSession> {
-  return updateSession(sessionId, patch);
+  return updateSession(sessionId, patch) as Promise<RepairSession>;
 }

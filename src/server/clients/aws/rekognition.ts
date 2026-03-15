@@ -1,16 +1,32 @@
 // feat/vision-identify — owns this file
 import { RekognitionClient, DetectLabelsCommand } from "@aws-sdk/client-rekognition";
-import { getAwsConfig, getRequiredEnv } from "@/server/env";
+import { getAwsConfig } from "@/server/env";
 
-const rekognition = new RekognitionClient(getAwsConfig());
-const BUCKET = getRequiredEnv("S3_BUCKET_NAME");
+let rekognitionClient: RekognitionClient | null = null;
+
+function getBucketName(): string | null {
+  return process.env.S3_BUCKET_NAME?.trim() || null;
+}
+
+function getRekognitionClient(): RekognitionClient {
+  if (!rekognitionClient) {
+    rekognitionClient = new RekognitionClient(getAwsConfig());
+  }
+
+  return rekognitionClient;
+}
 
 export async function validateLabels(s3Key: string): Promise<string[]> {
-  const result = await rekognition.send(
+  const bucket = getBucketName();
+  if (!bucket) {
+    return [];
+  }
+
+  const result = await getRekognitionClient().send(
     new DetectLabelsCommand({
       Image: {
         S3Object: {
-          Bucket: BUCKET,
+          Bucket: bucket,
           Name: s3Key,
         },
       },

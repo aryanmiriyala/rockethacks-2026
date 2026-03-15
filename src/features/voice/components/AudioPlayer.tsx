@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from "react";
 
 interface Props {
   src: string | null;
+  onPlaybackChange?: (playing: boolean) => void;
 }
 
-export default function AudioPlayer({ src }: Props) {
+export default function AudioPlayer({ src, onPlaybackChange }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [blocked, setBlocked] = useState(false);
 
@@ -15,7 +16,9 @@ export default function AudioPlayer({ src }: Props) {
     if (!src || !audioRef.current) return;
     setBlocked(false);
     audioRef.current.src = src;
-    audioRef.current.play().catch(() => setBlocked(true));
+    audioRef.current.play().then(() => {
+      onPlaybackChange?.(true);
+    }).catch(() => setBlocked(true));
   }, [src]);
 
   useEffect(() => {
@@ -24,14 +27,51 @@ export default function AudioPlayer({ src }: Props) {
       if (audioRef.current) {
         audioRef.current.currentTime = 0;
       }
+      onPlaybackChange?.(false);
+    }
+
+    function handleStopMedia() {
+      audioRef.current?.pause();
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+      }
+      onPlaybackChange?.(false);
+      setBlocked(false);
     }
 
     window.addEventListener("fixit:voice-listen-start", handleListenStart);
-    return () => window.removeEventListener("fixit:voice-listen-start", handleListenStart);
-  }, []);
+    window.addEventListener("fixit:stop-media", handleStopMedia);
+    return () => {
+      window.removeEventListener("fixit:voice-listen-start", handleListenStart);
+      window.removeEventListener("fixit:stop-media", handleStopMedia);
+    };
+  }, [onPlaybackChange]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    function handlePlay() {
+      onPlaybackChange?.(true);
+    }
+
+    function handleStop() {
+      onPlaybackChange?.(false);
+    }
+
+    audio.addEventListener("play", handlePlay);
+    audio.addEventListener("ended", handleStop);
+    audio.addEventListener("pause", handleStop);
+
+    return () => {
+      audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("ended", handleStop);
+      audio.removeEventListener("pause", handleStop);
+    };
+  }, [onPlaybackChange]);
 
   function handleManualPlay() {
-    audioRef.current?.play().catch(console.error);
+    audioRef.current?.play().then(() => onPlaybackChange?.(true)).catch(console.error);
     setBlocked(false);
   }
 

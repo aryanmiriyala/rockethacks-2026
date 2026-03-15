@@ -1,25 +1,51 @@
 // feat/session-aws — owns this file
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { getAwsConfig, getRequiredEnv } from "@/server/env";
+import { getAwsConfig } from "@/server/env";
 
-const s3 = new S3Client(getAwsConfig());
-const BUCKET = getRequiredEnv("S3_BUCKET_NAME");
+let s3Client: S3Client | null = null;
+
+function getBucketName(): string {
+  const bucket = process.env.S3_BUCKET_NAME?.trim();
+  if (!bucket) {
+    throw new Error("Missing required environment variable: S3_BUCKET_NAME");
+  }
+
+  return bucket;
+}
+
+function getS3Client(): S3Client {
+  if (!s3Client) {
+    s3Client = new S3Client(getAwsConfig());
+  }
+
+  return s3Client;
+}
 
 export async function getPresignedUploadUrl(key: string, contentType: string): Promise<string> {
   const command = new PutObjectCommand({
-    Bucket: BUCKET,
+    Bucket: getBucketName(),
     Key: key,
     ContentType: contentType,
   });
-  return getSignedUrl(s3, command, { expiresIn: 300 }); // 5 min
+  return getSignedUrl(getS3Client(), command, { expiresIn: 300 }); // 5 min
+}
+
+export async function putImageObject(key: string, bytes: Buffer, contentType: string): Promise<void> {
+  await getS3Client().send(
+    new PutObjectCommand({
+      Bucket: getBucketName(),
+      Key: key,
+      Body: bytes,
+      ContentType: contentType,
+    })
+  );
 }
 
 export async function getManualUrl(deviceId: string): Promise<string> {
   const command = new GetObjectCommand({
-    Bucket: BUCKET,
+    Bucket: getBucketName(),
     Key: `manuals/${deviceId}.pdf`,
   });
-  return getSignedUrl(s3, command, { expiresIn: 3600 });
+  return getSignedUrl(getS3Client(), command, { expiresIn: 3600 });
 }
