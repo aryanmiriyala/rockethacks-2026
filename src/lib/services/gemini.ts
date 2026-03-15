@@ -4,6 +4,15 @@ import type { DeviceIdentification } from "@/lib/types";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+export async function observeDeviceProblem(imageBase64: string): Promise<string> {
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const result = await model.generateContent([
+    "Look at this broken device and describe the visible problem in one clear, specific sentence. What's wrong with it?",
+    { inlineData: { mimeType: "image/jpeg", data: imageBase64 } },
+  ]);
+  return result.response.text().trim();
+}
+
 export async function identifyDeviceFromImage(imageBase64: string): Promise<DeviceIdentification> {
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
