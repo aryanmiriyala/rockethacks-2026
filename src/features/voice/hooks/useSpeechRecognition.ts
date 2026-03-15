@@ -21,6 +21,7 @@ export interface SpeechRecognitionResult {
 
 export function useSpeechRecognition(): SpeechRecognitionResult {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const shouldRestartRef = useRef(false);
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [keyword, setKeyword] = useState<Keyword | null>(null);
@@ -36,6 +37,18 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
       return;
     }
 
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    window.dispatchEvent(new CustomEvent("fixit:voice-listen-start"));
+
+    if (recognitionRef.current) {
+      shouldRestartRef.current = false;
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+
     const recognition = new SR();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -44,8 +57,13 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
     recognition.onstart = () => setListening(true);
     recognition.onend = () => {
       setListening(false);
-      // auto-restart so mic stays on until explicitly stopped
-      if (recognitionRef.current) recognition.start();
+      if (shouldRestartRef.current && recognitionRef.current === recognition) {
+        try {
+          recognition.start();
+        } catch (error) {
+          console.error("SpeechRecognition restart failed:", error);
+        }
+      }
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
@@ -74,12 +92,14 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
       }
     };
 
-    recognition.start();
+    shouldRestartRef.current = true;
     recognitionRef.current = recognition;
+    recognition.start();
   }, []);
 
   const stop = useCallback(() => {
     if (recognitionRef.current) {
+      shouldRestartRef.current = false;
       recognitionRef.current.onend = null; // prevent auto-restart
       recognitionRef.current.stop();
       recognitionRef.current = null;
