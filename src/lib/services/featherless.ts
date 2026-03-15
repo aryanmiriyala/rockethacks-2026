@@ -11,7 +11,7 @@ export async function observeDeviceProblem(imageBase64: string): Promise<string>
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.FEATHERLESS_VISION_MODEL ?? "Qwen/Qwen2-VL-7B-Instruct",
+      model: process.env.FEATHERLESS_VISION_MODEL ?? "Qwen/Qwen2.5-VL-7B-Instruct",
       messages: [
         {
           role: "user",

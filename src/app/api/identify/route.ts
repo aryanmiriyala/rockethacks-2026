@@ -13,6 +13,13 @@ export async function POST(req: NextRequest) {
     observeDeviceProblem(imageBase64),
   ]);
 
+  if (geminiResult.status === "rejected") {
+    console.error("Gemini failed:", geminiResult.reason);
+  }
+  if (observationResult.status === "rejected") {
+    console.error("Featherless failed:", observationResult.reason);
+  }
+
   const identification: DeviceIdentification =
     geminiResult.status === "fulfilled"
       ? geminiResult.value
