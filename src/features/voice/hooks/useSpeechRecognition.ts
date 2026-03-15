@@ -3,7 +3,7 @@
 // feat/voice — Web Speech API wrapper
 // Detects keywords (done/next/repeat/help/stop) and free-form questions separately
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 
 export type Keyword = "done" | "next" | "repeat" | "help" | "stop";
 
@@ -22,11 +22,40 @@ export interface SpeechRecognitionResult {
 
 export function useSpeechRecognition(): SpeechRecognitionResult {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const shouldRestartRef = useRef(false);
+  const silenceTimeoutRef = useRef<number | null>(null);
+  const lastTranscriptRef = useRef("");
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [keyword, setKeyword] = useState<Keyword | null>(null);
   const [question, setQuestion] = useState<string | null>(null);
+
+  const clearSilenceTimeout = useCallback(() => {
+    if (silenceTimeoutRef.current) {
+      window.clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+  }, []);
+
+  const promoteTranscript = useCallback((rawText: string) => {
+    const spokenText = rawText.trim();
+    if (!spokenText) {
+      return;
+    }
+
+    const normalizedText = spokenText.toLowerCase();
+    const detected = KEYWORDS.find((kw) => normalizedText.includes(kw));
+
+    if (detected) {
+      setKeyword(detected);
+      setQuestion(null);
+      return;
+    }
+
+    if (spokenText.length > 3) {
+      setQuestion(spokenText);
+      setKeyword(null);
+    }
+  }, []);
 
   const start = useCallback(() => {
     const SR =
@@ -45,49 +74,57 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
     window.dispatchEvent(new CustomEvent("fixit:voice-listen-start"));
 
     if (recognitionRef.current) {
-      shouldRestartRef.current = false;
+      clearSilenceTimeout();
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
 
     const recognition = new SR();
-    recognition.continuous = true;
+    recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
-    recognition.onstart = () => setListening(true);
+    recognition.onstart = () => {
+      lastTranscriptRef.current = "";
+      setTranscript("");
+      setListening(true);
+    };
     recognition.onend = () => {
       setListening(false);
-      if (shouldRestartRef.current && recognitionRef.current === recognition) {
-        try {
-          recognition.start();
-        } catch (error) {
-          console.error("SpeechRecognition restart failed:", error);
-        }
+      clearSilenceTimeout();
+      if (!question && !keyword && lastTranscriptRef.current.trim().length > 3) {
+        promoteTranscript(lastTranscriptRef.current);
+      }
+      if (recognitionRef.current === recognition) {
+        recognitionRef.current = null;
       }
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const spokenText = Array.from(event.results)
+        .map((result) => result[0]?.transcript?.trim() ?? "")
+        .join(" ")
+        .trim();
+
+      lastTranscriptRef.current = spokenText;
+      setTranscript(spokenText);
+      clearSilenceTimeout();
+
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        const text = result[0].transcript.trim().toLowerCase();
-        setTranscript(text);
+        const text = result[0].transcript.trim();
 
         if (result.isFinal) {
-          const detected = KEYWORDS.find((kw) => {
-            // "stop" only fires on exact utterance or deliberate phrase — prevents
-            // accidental mid-sentence triggers like "don't stop tightening it"
-            if (kw === "stop") return text === "stop" || text === "end session";
-            return text.includes(kw);
-          });
-          if (detected) {
-            setKeyword(detected);
-            setQuestion(null);
-          } else if (text.length > 3) {
-            setQuestion(text);
-            setKeyword(null);
-          }
+          promoteTranscript(spokenText || text);
+          recognition.stop();
+          return;
         }
+      }
+
+      if (spokenText.length > 3) {
+        silenceTimeoutRef.current = window.setTimeout(() => {
+          recognition.stop();
+        }, 1200);
       }
     };
 
@@ -96,28 +133,54 @@ export function useSpeechRecognition(): SpeechRecognitionResult {
       if (event.error !== "no-speech" && event.error !== "aborted") {
         console.error("SpeechRecognition error:", event.error);
       }
+      clearSilenceTimeout();
+      setListening(false);
     };
 
-    shouldRestartRef.current = true;
     recognitionRef.current = recognition;
     recognition.start();
-  }, []);
+  }, [clearSilenceTimeout, keyword, promoteTranscript, question]);
 
   const stop = useCallback(() => {
     if (recognitionRef.current) {
-      shouldRestartRef.current = false;
-      recognitionRef.current.onend = null; // prevent auto-restart
+      clearSilenceTimeout();
+      recognitionRef.current.onend = null;
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
     setListening(false);
     setTranscript("");
-  }, []);
+    lastTranscriptRef.current = "";
+  }, [clearSilenceTimeout]);
 
   const clearResult = useCallback(() => {
     setKeyword(null);
     setQuestion(null);
+    setTranscript("");
+    lastTranscriptRef.current = "";
   }, []);
+
+  useEffect(() => {
+    function handleStopMedia() {
+      stop();
+      clearResult();
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "hidden") {
+        handleStopMedia();
+      }
+    }
+
+    window.addEventListener("fixit:stop-media", handleStopMedia);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("fixit:stop-media", handleStopMedia);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      handleStopMedia();
+    };
+  }, [clearResult, stop]);
 
   return { listening, transcript, keyword, question, start, stop, clearResult };
 }

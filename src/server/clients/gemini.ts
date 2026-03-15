@@ -44,3 +44,48 @@ Respond ONLY with valid JSON in this format:
     confidence: parsed.confidence,
   };
 }
+
+interface InspectionVisionInput {
+  imageBase64: string;
+  userProblem: string;
+  transcript: string;
+  previousSummary?: string | null;
+}
+
+interface InspectionVisionResult {
+  itemLabel: string;
+  visibleIssue: string;
+  confidence: number;
+  requestedView: string | null;
+  safetyWarnings: string[];
+}
+
+export async function inspectLiveFrame(input: InspectionVisionInput): Promise<InspectionVisionResult> {
+  const model = genAI.getGenerativeModel({
+    model: process.env.GEMINI_INSPECT_MODEL ?? process.env.GEMINI_IDENTIFY_MODEL ?? "gemini-1.5-flash",
+  });
+
+  const prompt = `You are helping inspect a household item during a live camera session.
+The user says the problem is: "${input.userProblem}".
+Their latest spoken message is: "${input.transcript}".
+${input.previousSummary ? `Previous visual summary: "${input.previousSummary}".` : ""}
+
+Look only at what is actually visible. Do not invent hidden failures or repair steps.
+Return ONLY valid JSON:
+{
+  "itemLabel": "...",
+  "visibleIssue": "...",
+  "confidence": 0.0,
+  "requestedView": "... or null",
+  "safetyWarnings": ["..."]
+}
+
+Use requestedView when the camera should move to another angle to confirm the issue.`;
+
+  const result = await model.generateContent([
+    prompt,
+    { inlineData: { mimeType: "image/jpeg", data: input.imageBase64 } },
+  ]);
+
+  return extractJsonObject<InspectionVisionResult>(result.response.text());
+}

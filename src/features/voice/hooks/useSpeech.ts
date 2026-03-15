@@ -1,7 +1,7 @@
 "use client";
 
 // feat/voice — owns this hook
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 type VoiceCommand = "done" | "next" | "repeat" | "skip" | string;
 
@@ -19,17 +19,34 @@ function normalizeCommand(transcript: string): VoiceCommand {
 export default function useSpeech() {
   const [listening, setListening] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [spokenText, setSpokenText] = useState("");
+  const [fallbackNonce, setFallbackNonce] = useState(0);
+  const audioUrlRef = useRef<string | null>(null);
+  const requestIdRef = useRef(0);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const shouldRestartRef = useRef(false);
 
   // Fetch ElevenLabs TTS audio from /api/speak and return object URL
   const speak = useCallback(async (text: string) => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setSpokenText(text);
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      if (requestIdRef.current === requestId) {
+        controller.abort();
+        setAudioUrl(null);
+        setFallbackNonce((value) => value + 1);
+      }
+    }, 1800);
+
     try {
       const res = await fetch("/api/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -37,19 +54,35 @@ export default function useSpeech() {
       }
 
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      setAudioUrl(url);
-    } catch {
-      setAudioUrl(null);
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 1;
-        utterance.pitch = 1;
-        utteranceRef.current = utterance;
-        window.speechSynthesis.speak(utterance);
+      window.clearTimeout(timeoutId);
+
+      if (requestIdRef.current !== requestId) {
+        return;
       }
+
+      const url = URL.createObjectURL(blob);
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+      audioUrlRef.current = url;
+      setAudioUrl(url);
+    } catch (error) {
+      window.clearTimeout(timeoutId);
+      setAudioUrl(null);
+
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      setFallbackNonce((value) => value + 1);
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+    };
   }, []);
 
   // Web Speech API STT — fires onVoiceCommand when user speaks
@@ -126,5 +159,5 @@ export default function useSpeech() {
     setListening(false);
   }, []);
 
-  return { speak, audioUrl, listening, startListening, stopListening };
+  return { speak, audioUrl, spokenText, fallbackNonce, listening, startListening, stopListening };
 }

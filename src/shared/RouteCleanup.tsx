@@ -16,17 +16,22 @@ function stopActiveCameraStreams() {
   }
 }
 
+function stopActiveMedia() {
+  stopActiveCameraStreams();
+  window.dispatchEvent(new CustomEvent("fixit:stop-media"));
+}
+
 export default function RouteCleanup() {
   const pathname = usePathname();
 
   useEffect(() => {
     if (!CAMERA_ROUTES.has(pathname)) {
-      stopActiveCameraStreams();
+      stopActiveMedia();
     }
   }, [pathname]);
 
   useEffect(() => {
-    const handlePageHide = () => stopActiveCameraStreams();
+    const handlePageHide = () => stopActiveMedia();
 
     window.addEventListener("pagehide", handlePageHide);
     return () => window.removeEventListener("pagehide", handlePageHide);

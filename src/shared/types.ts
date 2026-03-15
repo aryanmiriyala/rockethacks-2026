@@ -99,3 +99,80 @@ export interface UploadUrlResponse {
   uploadUrl: string;
   s3Key: string;
 }
+
+export type InspectionOutcome =
+  | "inspect_more"
+  | "repair"
+  | "replace_part"
+  | "reuse"
+  | "donate"
+  | "recycle"
+  | "unsafe";
+
+export type InspectionSessionStatus = "active" | "complete" | "error";
+
+export interface InspectionMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: string;
+}
+
+export interface InspectionFrame {
+  capturedAt: string;
+  s3Key?: string;
+  source: "manual" | "requested";
+  geminiSummary?: string;
+  rekognitionLabels?: string[];
+}
+
+export interface InspectionFinding {
+  issueSummary: string;
+  confidence: number;
+  recommendedOutcome: InspectionOutcome;
+  rationale: string;
+  requestedView?: string | null;
+  safetyWarnings: string[];
+}
+
+export interface InspectionSession {
+  sessionId: string;
+  status: InspectionSessionStatus;
+  createdAt: string;
+  updatedAt: string;
+  userProblem: string;
+  itemLabel?: string | null;
+  currentViewRequest?: string | null;
+  latestFinding: InspectionFinding | null;
+  messages: InspectionMessage[];
+  frames: InspectionFrame[];
+}
+
+export interface CreateInspectionSessionRequest {
+  userProblem: string;
+}
+
+export interface CreateInspectionSessionResponse {
+  session: InspectionSession;
+}
+
+export interface UpdateInspectionSessionRequest {
+  status?: InspectionSessionStatus;
+  userProblem?: string;
+  itemLabel?: string | null;
+  currentViewRequest?: string | null;
+  latestFinding?: InspectionFinding | null;
+  messages?: InspectionMessage[];
+  frames?: InspectionFrame[];
+}
+
+export interface InspectionTurnRequest {
+  sessionId: string;
+  transcript: string;
+  frameBase64?: string;
+  frameSource?: InspectionFrame["source"];
+}
+
+export interface InspectionTurnResponse {
+  session: InspectionSession;
+  spokenResponse: string;
+}
