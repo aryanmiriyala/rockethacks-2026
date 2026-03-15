@@ -14,7 +14,7 @@ export async function observeDeviceProblem(imageBase64: string): Promise<string>
 }
 
 export async function identifyDeviceFromImage(imageBase64: string): Promise<DeviceIdentification> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
   const prompt = `You are an appliance repair expert. Look at this image and identify:
 1. The type of device/appliance (e.g. "Floor Lamp", "Coffee Maker", "Toaster")
