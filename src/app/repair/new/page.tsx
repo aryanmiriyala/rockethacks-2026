@@ -4,12 +4,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import CameraCapture from "@/components/camera/CameraCapture";
-import PhotoPreview from "@/components/camera/PhotoPreview";
-import Button from "@/components/ui/Button";
-import Spinner from "@/components/ui/Spinner";
-import ErrorBanner from "@/components/ui/ErrorBanner";
-import type { DeviceIdentification, IdentifyResponse, CreateSessionResponse } from "@/lib/types";
+import CameraCapture from "@/features/camera/components/CameraCapture";
+import PhotoPreview from "@/features/camera/components/PhotoPreview";
+import Button from "@/shared/ui/Button";
+import Spinner from "@/shared/ui/Spinner";
+import ErrorBanner from "@/shared/ui/ErrorBanner";
+import type { DeviceIdentification, IdentifyResponse, CreateSessionResponse } from "@/shared/types";
 
 type Stage = "capture" | "preview" | "identifying" | "identified" | "starting" | "error";
 
@@ -42,7 +42,10 @@ export default function NewRepairPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64 }),
       });
-      if (!res.ok) throw new Error(`Analysis failed (${res.status})`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Analysis failed (${res.status})`);
+      }
       const { identification }: IdentifyResponse = await res.json();
       setIdentification(identification);
       setStage("identified");

@@ -46,22 +46,25 @@ src/
 │   │   └── [sessionId]/        # Repair walkthrough
 │   └── api/
 │       ├── upload/             # S3 presigned URL
-│       ├── identify/           # Gemini Vision + Rekognition
+│       ├── identify/           # Device identification endpoint
 │       ├── session/            # DynamoDB CRUD
 │       ├── repair-step/        # Featherless.AI step generation
 │       ├── orchestrate/        # Jaseci Lambda proxy
 │       └── speak/              # ElevenLabs TTS stream
-├── lib/
-│   ├── types.ts                # Shared TypeScript interfaces
-│   ├── services/               # Third-party integrations (server-side)
-│   └── hooks/                  # React hooks (client-side)
-└── components/
-    ├── camera/                 # CameraCapture, PhotoPreview
-    ├── repair/                 # StepCard, StepProgress, RepairComplete
-    ├── voice/                  # VoiceButton, AudioPlayer
-    └── ui/                     # Button, Spinner, ErrorBanner
+├── features/                   # Frontend modules grouped by domain
+│   ├── camera/
+│   ├── repair/
+│   └── voice/
+├── server/
+│   ├── clients/                # Provider and AWS integration clients
+│   └── services/               # Backend application logic
+└── shared/
+    ├── types.ts                # Shared TypeScript contracts
+    └── ui/                     # Shared presentational UI components
 infra/
-└── lambda/orchestrator/        # AWS Lambda handler for Jaseci proxy
+└── aws/
+    ├── README.md               # AWS deployment/config docs
+    └── lambda/orchestrator/    # AWS Lambda handler for Jaseci proxy
 ```
 
 ---
@@ -88,15 +91,15 @@ Open [http://localhost:3000](http://localhost:3000) on mobile or use Chrome DevT
 
 | Branch | Owns |
 | --- | --- |
-| `feat/camera-capture` | `useCamera`, `CameraCapture`, `PhotoPreview`, `repair/new/page.tsx` |
-| `feat/repair-walkthrough` | `useRepairSession`, `StepCard`, `StepProgress`, `repair/[sessionId]/page.tsx` |
-| `feat/voice` | `useSpeech`, `VoiceButton`, `AudioPlayer`, `api/speak/route.ts`, `elevenlabs.ts` |
-| `feat/vision-identify` | `gemini.ts`, `rekognition.ts`, `api/identify/route.ts`, `api/upload/route.ts` |
-| `feat/llm-steps` | `featherless.ts`, `api/repair-step/route.ts` |
-| `feat/session-aws` | `dynamodb.ts`, `s3.ts`, `api/session/` routes |
-| `feat/jaseci-orchestration` | `jaseci.ts`, `api/orchestrate/route.ts`, `infra/lambda/` |
+| `feat/camera-capture` | `features/camera/*`, `repair/new/page.tsx` |
+| `feat/repair-walkthrough` | `features/repair/*`, `repair/[sessionId]/page.tsx` |
+| `feat/voice` | `features/voice/*`, `api/speak/route.ts`, `server/clients/elevenlabs.ts` |
+| `feat/vision-identify` | `server/clients/gemini.ts`, `api/identify/route.ts`, `api/upload/route.ts` |
+| `feat/llm-steps` | `server/clients/featherless.ts`, `api/repair-step/route.ts` |
+| `feat/session-aws` | `server/clients/aws/*`, `api/session/` routes |
+| `feat/jaseci-orchestration` | `server/clients/jaseci.ts`, `api/orchestrate/route.ts`, `infra/aws/lambda/` |
 
-**Start with `src/lib/types.ts`** — all teammates share these interfaces.
+**Start with `src/shared/types.ts`** — all teammates share these interfaces.
 
 ---
 
@@ -116,4 +119,4 @@ Required services:
 
 ## AWS Infrastructure
 
-See [infra/README.md](infra/README.md) for DynamoDB schema, Lambda setup, S3 CORS config, and IAM permissions.
+See [infra/aws/README.md](infra/aws/README.md) for DynamoDB schema, Lambda setup, S3 CORS config, and IAM permissions.
