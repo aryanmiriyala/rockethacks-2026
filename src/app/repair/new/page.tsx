@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useCamera from "@/features/camera/hooks/useCamera";
 import useSpeech from "@/features/voice/hooks/useSpeech";
 import AudioPlayer from "@/features/voice/components/AudioPlayer";
@@ -42,10 +42,31 @@ export default function NewRepairPage() {
   const [assistantSpeaking, setAssistantSpeaking] = useState(false);
   const [conversationClosed, setConversationClosed] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("Tap the mic and talk while showing the item.");
+  const [captureCountdown, setCaptureCountdown] = useState<number | null>(null);
+  const [pendingCaptureRequest, setPendingCaptureRequest] = useState<string | null>(null);
+  const countdownTimerRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
+  const lastAutoCaptureTokenRef = useRef<string | null>(null);
+
+  function clearScheduledCapture() {
+    if (countdownTimerRef.current) {
+      window.clearTimeout(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+
+    if (countdownIntervalRef.current) {
+      window.clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+
+    setCaptureCountdown(null);
+    setPendingCaptureRequest(null);
+  }
 
   useEffect(() => {
     startCamera();
     return () => {
+      clearScheduledCapture();
       setConversationClosed(true);
       setVoiceStatus("Tap the mic and talk while showing the item.");
       stop();
@@ -95,12 +116,16 @@ export default function NewRepairPage() {
     return blobToBase64(photo);
   }
 
-  async function submitTurn(transcript: string) {
+  async function submitTurn(
+    transcript: string,
+    options?: { includeFrame?: boolean; frameSource?: "manual" | "requested" }
+  ) {
     const normalizedTranscript = transcript.trim();
     if (!normalizedTranscript) {
       return;
     }
 
+    clearScheduledCapture();
     console.log("[inspection] submitting turn", { transcript: normalizedTranscript });
 
     setLoading(true);
@@ -113,7 +138,7 @@ export default function NewRepairPage() {
         return;
       }
 
-      const frameBase64 = await captureFrameBase64();
+      const frameBase64 = options?.includeFrame ? await captureFrameBase64() : undefined;
 
       const res = await fetch("/api/inspection/turn", {
         method: "POST",
@@ -122,7 +147,7 @@ export default function NewRepairPage() {
           sessionId: activeSession.sessionId,
           transcript: normalizedTranscript,
           frameBase64,
-          frameSource: "manual",
+          frameSource: options?.frameSource,
         }),
       });
 
@@ -150,9 +175,52 @@ export default function NewRepairPage() {
     }
   }
 
+  function scheduleRequestedCapture(viewRequest: string, source: "manual" | "requested") {
+    if (loading || !isReady) {
+      return;
+    }
+
+    stop();
+    setConversationClosed(false);
+    setPendingCaptureRequest(viewRequest);
+    setCaptureCountdown(3);
+    setVoiceStatus(`Capturing in 3 seconds: ${viewRequest}`);
+
+    countdownIntervalRef.current = window.setInterval(() => {
+      setCaptureCountdown((current) => {
+        if (current === null || current <= 1) {
+          if (countdownIntervalRef.current) {
+            window.clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+          }
+          return null;
+        }
+
+        return current - 1;
+      });
+    }, 1000);
+
+    countdownTimerRef.current = window.setTimeout(() => {
+      countdownTimerRef.current = null;
+      setPendingCaptureRequest(null);
+      setVoiceStatus("Capturing requested image...");
+
+      submitTurn(
+        source === "requested"
+          ? `Here is the requested view: ${viewRequest}`
+          : "Here is the current view.",
+        { includeFrame: true, frameSource: source }
+      ).catch((turnError) => {
+        setError(turnError instanceof Error ? turnError.message : "Inspection turn failed");
+        setVoiceStatus("Tap the mic and talk while showing the item.");
+      });
+    }, 3000);
+  }
+
   function handleVoiceToggle() {
     if (listening) {
       setConversationClosed(true);
+      clearScheduledCapture();
       setVoiceStatus("Conversation paused. Tap the mic to continue.");
       stop();
       return;
@@ -210,10 +278,10 @@ export default function NewRepairPage() {
       return;
     }
 
-    if (!playing && session && !loading && !listening && !conversationClosed) {
+    if (!playing && session && !loading && !listening && !conversationClosed && !pendingCaptureRequest && captureCountdown === null) {
       setVoiceStatus("Listening...");
       window.setTimeout(() => {
-        if (!loading && !listening && !conversationClosed) {
+        if (!loading && !listening && !conversationClosed && !pendingCaptureRequest && captureCountdown === null) {
           try {
             start();
           } catch (voiceError) {
@@ -223,6 +291,32 @@ export default function NewRepairPage() {
       }, 250);
     }
   }
+
+  useEffect(() => {
+    if (!session?.latestFinding || loading || assistantSpeaking || listening) {
+      return;
+    }
+
+    const requestedView = session.currentViewRequest?.trim();
+    const latestAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+    const shouldAutoCapture = Boolean(
+      requestedView
+      && session.latestFinding.recommendedOutcome === "inspect_more"
+      && latestAssistantMessage
+    );
+
+    if (!shouldAutoCapture || !requestedView || !latestAssistantMessage) {
+      return;
+    }
+
+    const autoCaptureToken = `${latestAssistantMessage.createdAt}:${requestedView}`;
+    if (lastAutoCaptureTokenRef.current === autoCaptureToken) {
+      return;
+    }
+
+    lastAutoCaptureTokenRef.current = autoCaptureToken;
+    scheduleRequestedCapture(requestedView, "requested");
+  }, [assistantSpeaking, listening, loading, messages, session]);
 
   const liveTranscript = listening ? transcript : "";
 
@@ -242,6 +336,17 @@ export default function NewRepairPage() {
           {!isReady && !cameraError && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/60">
               <Spinner size={10} />
+            </div>
+          )}
+
+          {pendingCaptureRequest && captureCountdown !== null && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/35 p-6">
+              <div className="rounded-[1.75rem] border border-white/10 bg-black/65 px-7 py-6 text-center shadow-2xl backdrop-blur-md">
+                <p className="text-xs uppercase tracking-[0.28em] text-brand-green/80">Requested View</p>
+                <p className="mt-3 max-w-sm text-lg font-medium text-white">{pendingCaptureRequest}</p>
+                <div className="mt-5 text-5xl font-semibold text-brand-green">{captureCountdown}</div>
+                <p className="mt-3 text-sm text-slate-300">Hold the camera steady while Fix-It-Flow captures the image.</p>
+              </div>
             </div>
           )}
 
@@ -299,7 +404,7 @@ export default function NewRepairPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    submitTurn("Here is the current view you asked for.").catch(() => {});
+                    scheduleRequestedCapture(session?.currentViewRequest ?? "Show the current area clearly.", "manual");
                   }}
                   disabled={loading || !session || !isReady}
                   className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white transition hover:bg-white/15 disabled:opacity-40"

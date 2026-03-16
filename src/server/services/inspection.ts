@@ -4,8 +4,10 @@ import {
   getInspectionSessionRecord,
   updateSession,
 } from "@/server/clients/aws/dynamodb";
+import { getImageObjectBase64 } from "@/server/clients/aws/s3";
 import { runInspectionTurn } from "@/server/clients/featherless";
 import { inspectLiveFrame } from "@/server/clients/gemini";
+import { uploadInspectionFrame } from "@/server/services/storage";
 import type {
   CreateInspectionSessionRequest,
   InspectionFinding,
@@ -132,15 +134,38 @@ export async function processInspectionTurn(
 
   const frames: InspectionFrame[] = [...session.frames];
   const fallback = createFallbackFinding(request.transcript);
+  const capturedAt = nowIso();
+  const latestStoredFrame = [...session.frames].reverse().find((frame) => frame.s3Key);
+  const latestStoredVisualSummary = [...session.frames]
+    .reverse()
+    .find((frame) => frame.geminiSummary?.trim())
+    ?.geminiSummary ?? null;
+  let imageBase64ForVision = request.frameBase64 ?? null;
 
-  // Run Gemini (vision) and Featherless (reasoning) in parallel.
+  if (!imageBase64ForVision && latestStoredFrame?.s3Key) {
+    try {
+      imageBase64ForVision = await getImageObjectBase64(latestStoredFrame.s3Key);
+    } catch (error) {
+      console.error("Inspection frame retrieval failed:", error);
+    }
+  }
+
+  // Run upload, Gemini (vision), and Featherless (reasoning) in parallel.
   // Featherless gets the PREVIOUS turn's visual summary so it has image context
   // without waiting for Gemini to finish this turn.
-  const [visionSettled, reasoningSettled] = await Promise.allSettled([
+  const [uploadSettled, visionSettled, reasoningSettled] = await Promise.allSettled([
     request.frameBase64
+      ? uploadInspectionFrame({
+          sessionId: session.sessionId,
+          capturedAt,
+          source: request.frameSource ?? "manual",
+          imageBase64: request.frameBase64,
+        })
+      : Promise.resolve(null),
+    imageBase64ForVision
       ? withTimeout(
           inspectLiveFrame({
-            imageBase64: request.frameBase64,
+            imageBase64: imageBase64ForVision,
             userProblem: session.userProblem,
             transcript: request.transcript,
             previousSummary: session.latestFinding?.issueSummary ?? null,
@@ -154,7 +179,7 @@ export async function processInspectionTurn(
         userProblem: session.userProblem,
         transcript: request.transcript,
         itemLabel: session.itemLabel,
-        visionSummary: session.latestFinding?.issueSummary ?? null,
+        visionSummary: latestStoredVisualSummary ?? session.latestFinding?.issueSummary ?? null,
         rekognitionLabels: [],
         previousFinding: session.latestFinding,
         currentViewRequest: session.currentViewRequest,
@@ -164,6 +189,9 @@ export async function processInspectionTurn(
       "Featherless reasoning"
     ),
   ]);
+
+  const uploadedFrame = uploadSettled.status === "fulfilled" ? uploadSettled.value : null;
+  if (uploadSettled.status === "rejected") console.error("Inspection frame upload failed:", uploadSettled.reason);
 
   const vision = visionSettled.status === "fulfilled" ? visionSettled.value : null;
   if (visionSettled.status === "rejected") console.error("Gemini vision failed:", visionSettled.reason);
@@ -175,7 +203,8 @@ export async function processInspectionTurn(
 
   if (request.frameBase64) {
     frames.push({
-      capturedAt: nowIso(),
+      capturedAt,
+      s3Key: uploadedFrame?.s3Key ?? undefined,
       source: request.frameSource ?? "manual",
       geminiSummary: vision?.visibleIssue ?? undefined,
       rekognitionLabels: [],

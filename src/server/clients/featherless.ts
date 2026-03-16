@@ -241,6 +241,10 @@ export async function runInspectionTurn(
 CONVERSATION RULES:
 - ${questionLimitReached ? "QUESTIONS LIMIT REACHED (3/3). You must now commit to a specific recommendation — do NOT ask any more questions." : `You have asked ${questionsAsked}/3 follow-up questions. ${questionsAsked < 3 ? "You may ask ONE more targeted question only if it would materially change your recommendation, otherwise give a concrete action." : ""}`}
 - NEVER repeat a suggestion already mentioned in the conversation history.
+- Treat prior visual evidence as real evidence. Do not ignore it just because there is no new image this turn.
+- Only request a new camera view if the missing visual detail would materially change your recommendation.
+- When the user asks a direct question, answer it first in plain language before asking for anything else.
+- If your confidence is below 0.55, explain the uncertainty briefly instead of pretending to know.
 - Be specific: say exactly which part to check, which tool to use, how to test it. Avoid vague advice like "check the wiring".
 - Sustainability priority: repair > replace only the broken part > clean/adjust/repurpose > donate > recycle. Buying new is always last.
 - If too complex for home repair, name a specific sustainable alternative (e.g. "iFixit has a guide for this exact part", "manufacturer sells this fuse for $2", "local repair cafe can do this in 20 min").
@@ -252,6 +256,7 @@ CONVERSATION RULES:
 User's problem: "${input.userProblem}"
 Visual analysis: ${input.visionSummary ?? "none"}
 Previous assessment: ${input.previousFinding ? `${input.previousFinding.issueSummary} (confidence ${input.previousFinding.confidence}, outcome: ${input.previousFinding.recommendedOutcome})` : "none"}
+Current requested view: ${input.currentViewRequest ?? "none"}
 Already suggested: ${previousSuggestions || "nothing yet"}
 Transcript intent: ${transcriptIntent}
 Latest message: "${input.transcript}"
@@ -267,7 +272,7 @@ Respond with valid JSON only:
     "confidence": 0.0,
     "recommendedOutcome": "inspect_more | repair | replace_part | reuse | donate | recycle | unsafe",
     "rationale": "Why this is the most sustainable next step given the conversation so far",
-    "requestedView": "Specific camera angle that would confirm your hypothesis, or null",
+    "requestedView": "Specific camera angle that would materially change your recommendation, or null if you can answer now",
     "safetyWarnings": []
   }
 }`;
@@ -284,7 +289,7 @@ Respond with valid JSON only:
         { role: "system", content: systemPrompt },
         { role: "user", content: prompt },
       ],
-      temperature: 0.3,
+      temperature: 0.2,
       max_tokens: 320,
     }),
   });

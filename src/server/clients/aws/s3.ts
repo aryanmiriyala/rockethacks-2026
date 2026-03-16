@@ -42,6 +42,22 @@ export async function putImageObject(key: string, bytes: Buffer, contentType: st
   );
 }
 
+export async function getImageObjectBase64(key: string): Promise<string> {
+  const response = await getS3Client().send(
+    new GetObjectCommand({
+      Bucket: getBucketName(),
+      Key: key,
+    })
+  );
+
+  if (!response.Body) {
+    throw new Error(`S3 object has no body for key: ${key}`);
+  }
+
+  const bytes = await response.Body.transformToByteArray();
+  return Buffer.from(bytes).toString("base64");
+}
+
 export async function getManualUrl(deviceId: string): Promise<string> {
   const command = new GetObjectCommand({
     Bucket: getBucketName(),
