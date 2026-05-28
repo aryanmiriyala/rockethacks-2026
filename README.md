@@ -82,7 +82,7 @@ src/
 npm install
 
 # 2. Set up environment variables
-cp .env.local.example .env.local
+touch .env.local
 # Fill in all API keys — see table below
 
 # 3. Run development server
